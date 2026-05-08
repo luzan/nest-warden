@@ -39,6 +39,22 @@ export class MerchantsService {
     return qb.getMany();
   }
 
+  /**
+   * Lists merchants the caller is allowed to `approve`. Demonstrates
+   * conditional authorization end-to-end: the rule attached to the
+   * `merchant-approver` role carries `{ status: 'pending' }`, which
+   * `accessibleBy()` compiles into the emitted SQL — the database
+   * never returns active or closed rows for an approver. No
+   * in-memory filtering.
+   */
+  async findApprovable(): Promise<Merchant[]> {
+    const ability = await this.abilityFactory.build();
+    const repo = this.dataSource.getRepository(Merchant);
+    const qb = repo.createQueryBuilder('m');
+    accessibleBy(ability, 'approve', 'Merchant', { alias: 'm', graph: relationshipGraph }).applyTo(qb);
+    return qb.getMany();
+  }
+
   async findOne(id: string): Promise<Merchant> {
     const ability = await this.abilityFactory.build();
     const repo = this.dataSource.getRepository(Merchant);

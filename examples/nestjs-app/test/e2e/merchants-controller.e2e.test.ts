@@ -121,6 +121,34 @@ describe('GET /merchants — multi-tenant access control', () => {
     });
   });
 
+  describe('conditional authorization: GET /merchants/approvable', () => {
+    // The `merchant-approver` rule is `can('approve', 'Merchant',
+    // { status: 'pending' })`. The fixture has m1=active, m2=pending,
+    // m3=closed in ACME and m4=active in BETA. Both assertions below
+    // are categorical: the SQL emitted by `accessibleBy()` must
+    // include `WHERE status = 'pending'`, so non-pending rows never
+    // come back even though they exist in the same tenant.
+
+    it('an approver in ACME sees only the pending merchant (m2)', async () => {
+      const res = await request(app.getHttpServer())
+        .get('/merchants/approvable')
+        .set(fakeAuth('any-user-id', TENANT_ACME, ['merchant-approver']));
+
+      expect(res.status).toBe(200);
+      const ids = (res.body as { id: string }[]).map((r) => r.id);
+      expect(ids).toEqual([MERCHANT_M2]);
+    });
+
+    it('an approver in BETA sees nothing (BETA has no pending merchants)', async () => {
+      const res = await request(app.getHttpServer())
+        .get('/merchants/approvable')
+        .set(fakeAuth('any-user-id', TENANT_BETA, ['merchant-approver']));
+
+      expect(res.status).toBe(200);
+      expect(res.body as unknown[]).toEqual([]);
+    });
+  });
+
   describe('forward check: GET /merchants/:id', () => {
     it('Alice can read m1 (assigned)', async () => {
       const res = await request(app.getHttpServer())
