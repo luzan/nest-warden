@@ -181,6 +181,59 @@ writes, but the row will silently be a no-op for cross-tenant IDs
 rather than raising 404.
 {% /callout %}
 
+### Soft delete via `@DeleteDateColumn`
+
+For audit-friendly deletes, mark a column on the entity:
+
+```ts
+import { DeleteDateColumn } from 'typeorm';
+
+@Entity('merchants')
+export class Merchant {
+  // ... id, tenantId, etc.
+
+  @DeleteDateColumn({ name: 'deleted_at' })
+  deletedAt?: Date | null;
+}
+```
+
+In the service, swap `repo.remove(entity)` for `repo.softRemove(entity)`:
+
+```ts
+await repo.softRemove(merchant);
+// → UPDATE merchants SET deleted_at = NOW() WHERE id = $1
+```
+
+TypeORM auto-applies `WHERE deletedAt IS NULL` to every read on the
+entity — `find()`, `findOne()`, and `createQueryBuilder().getMany()`
+all skip soft-deleted rows by default. The `accessibleBy()`
+predicate composes via AND, so the authorization check and tenant
+predicate still apply when soft-deleted rows are surfaced.
+
+To include them, opt in on the QueryBuilder:
+
+```ts
+const qb = repo.createQueryBuilder('m').withDeleted();
+accessibleBy(ability, 'read', 'Merchant', { alias: 'm', graph }).applyTo(qb);
+const all = await qb.getMany(); // includes soft-deleted rows
+```
+
+The composed SQL becomes roughly:
+
+```sql
+WHERE m.tenantId = $1
+  AND <auth fragment>
+-- (no `deletedAt IS NULL` clause)
+```
+
+{% callout type="note" title="Soft delete and RLS" %}
+Postgres RLS policies see only the rows their `USING` clause
+permits, regardless of `deletedAt`. A soft-deleted row from another
+tenant is still excluded by the tenant policy. Soft delete and RLS
+operate on independent dimensions; both compose into the final
+query plan via AND.
+{% /callout %}
+
 ### Why the policy guard alone isn't enough
 
 `@CheckPolicies(...)` runs **before** the controller method, so the

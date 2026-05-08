@@ -31,12 +31,19 @@ CREATE TABLE IF NOT EXISTS agents (
 
 -- Merchants: the primary business resource. Tenant-scoped. Can be assigned
 -- to zero or more agents.
+-- `deleted_at` enables TypeORM's soft-delete pattern. NULL means live;
+-- non-null means soft-deleted. TypeORM's QueryBuilder excludes
+-- non-null rows from `getMany()` by default; pass `.withDeleted()`
+-- to include them. RLS and `accessibleBy()` predicates compose with
+-- this filter via AND, so soft-deleted rows still respect tenant
+-- isolation when surfaced via `withDeleted: true`.
 CREATE TABLE IF NOT EXISTS merchants (
   id          uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
   tenant_id   uuid        NOT NULL REFERENCES tenants(id),
   name        text        NOT NULL,
   status      text        NOT NULL CHECK (status IN ('active','pending','closed')),
-  created_at  timestamptz NOT NULL DEFAULT now()
+  created_at  timestamptz NOT NULL DEFAULT now(),
+  deleted_at  timestamptz NULL
 );
 
 -- Agent ↔ Merchant assignments (many-to-many). Used by the relationship

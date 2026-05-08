@@ -7,6 +7,7 @@ import {
   Inject,
   Param,
   Patch,
+  Query,
 } from '@nestjs/common';
 import { CheckPolicies } from 'nest-warden/nestjs';
 import { MerchantsService } from './merchants.service.js';
@@ -37,8 +38,8 @@ export class MerchantsController {
 
   @CheckPolicies((ability: AppAbility) => ability.can('read', 'Merchant'))
   @Get()
-  async list(): Promise<Merchant[]> {
-    return this.merchants.findAll();
+  async list(@Query('with_deleted') withDeleted?: string): Promise<Merchant[]> {
+    return this.merchants.findAll({ withDeleted: withDeleted === 'true' });
   }
 
   // Conditional-authz demo. The route is gated on `approve Merchant`,
