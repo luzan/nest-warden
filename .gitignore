@@ -1,0 +1,32 @@
+node_modules/
+dist/
+coverage/
+.vitest-cache/
+.turbo/
+.tsbuildinfo
+*.tsbuildinfo
+.DS_Store
+.env
+.env.*
+!.env.example
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.idea/
+.vscode/
+!.vscode/extensions.json
+!.vscode/settings.json.example
+.pnpm-store/
+
+# Claude Code — personal overrides stay out of the repo.
+# `.claude/settings.json` IS committed (sets the team-wide permission
+# baseline); `.claude/settings.local.json` is for per-developer
+# overrides like custom env vars or extra allowed Bash patterns.
+.claude/settings.local.json
+.claude/CLAUDE.local.md
+.claude/.transcripts/
+.claude/projects/
+.claude/
+CLAUDE.md
