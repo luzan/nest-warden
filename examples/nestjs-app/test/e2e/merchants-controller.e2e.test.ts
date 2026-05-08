@@ -11,6 +11,8 @@ import {
   AGENT_CAROL,
   MERCHANT_M1,
   MERCHANT_M2,
+  MERCHANT_M3,
+  MERCHANT_M4,
   TENANT_ACME,
   TENANT_BETA,
   seedFixture,
@@ -246,6 +248,65 @@ describe('GET /merchants — multi-tenant access control', () => {
       // controller maps "not found" to 404. We accept either 403 (caught
       // at the guard) or 404 (caught at the service).
       expect([403, 404]).toContain(res.status);
+    });
+  });
+
+  // -----------------------------------------------------------------
+  // Mutating endpoints. This block runs LAST so writes don't disturb
+  // earlier read-only assertions: PATCH targets m1 and DELETE targets
+  // m3, both of which are not asserted on by name in any earlier
+  // test (only counted in the iso-admin assertion, which has already
+  // run by the time this block executes).
+  // -----------------------------------------------------------------
+  describe('mutating endpoints: PATCH and DELETE', () => {
+    it('an iso-admin can update an in-tenant merchant', async () => {
+      const res = await request(app.getHttpServer())
+        .patch(`/merchants/${MERCHANT_M1}`)
+        .set(fakeAuth('any-user-id', TENANT_ACME, ['iso-admin']))
+        .send({ status: 'closed' });
+
+      expect(res.status).toBe(200);
+      expect((res.body as { id: string; status: string }).status).toBe('closed');
+    });
+
+    it('an agent (no update rule) is denied by the policy guard', async () => {
+      const res = await request(app.getHttpServer())
+        .patch(`/merchants/${MERCHANT_M1}`)
+        .set(fakeAuth(AGENT_ALICE, TENANT_ACME, ['agent']))
+        .send({ status: 'active' });
+      expect([403, 404]).toContain(res.status);
+    });
+
+    it('an iso-admin patching a cross-tenant merchant gets 404 (existence not leaked)', async () => {
+      // ACME admin attempting to PATCH m4 (BETA tenant). The service's
+      // tenant-scoped findOne returns null, so the service throws
+      // NotFoundException — same response shape as for an unknown id.
+      const res = await request(app.getHttpServer())
+        .patch(`/merchants/${MERCHANT_M4}`)
+        .set(fakeAuth('any-user-id', TENANT_ACME, ['iso-admin']))
+        .send({ status: 'closed' });
+      expect(res.status).toBe(404);
+    });
+
+    it('an iso-admin can delete an in-tenant merchant', async () => {
+      const res = await request(app.getHttpServer())
+        .delete(`/merchants/${MERCHANT_M3}`)
+        .set(fakeAuth('any-user-id', TENANT_ACME, ['iso-admin']));
+
+      expect(res.status).toBe(204);
+
+      // Confirm it's gone.
+      const followUp = await request(app.getHttpServer())
+        .get(`/merchants/${MERCHANT_M3}`)
+        .set(fakeAuth('any-user-id', TENANT_ACME, ['iso-admin']));
+      expect(followUp.status).toBe(404);
+    });
+
+    it('an iso-admin deleting a cross-tenant merchant gets 404', async () => {
+      const res = await request(app.getHttpServer())
+        .delete(`/merchants/${MERCHANT_M4}`)
+        .set(fakeAuth('any-user-id', TENANT_ACME, ['iso-admin']));
+      expect(res.status).toBe(404);
     });
   });
 });

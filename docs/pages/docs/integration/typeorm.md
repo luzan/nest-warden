@@ -134,6 +134,63 @@ operations not on the wrapper, drop down to `repo.repository` (the
 underlying TypeORM repo) and call `repo.scopeWhere(...)` /
 `repo.scopeQueryBuilder(...)` manually.
 
+## Updates and deletes
+
+Writes follow a **load-then-check-then-persist** pattern. The library
+gives you three layers of defense; use all three for non-trivial
+mutations:
+
+```ts
+async update(id: string, partial: Partial<Merchant>): Promise<Merchant> {
+  const ability = await this.abilityFactory.build();
+  const repo = this.dataSource.getRepository(Merchant);
+
+  // 1. Tenant-scoped load. Cross-tenant IDs surface as 404, not as
+  //    authorization errors — existence is never leaked.
+  const merchant = await repo.findOne({
+    where: { id, tenantId: this.tenantContext.tenantId },
+  });
+  if (!merchant) throw new NotFoundException(`Merchant ${id} not found.`);
+
+  // 2. Forward authorization check. Required for rules with row-level
+  //    conditions; the policy guard alone gates by (action, subject)
+  //    without seeing the loaded row.
+  if (!ability.can('update', { ...merchant, __caslSubjectType__: 'Merchant' } as never)) {
+    throw new NotFoundException(`Merchant ${id} not found.`);
+  }
+
+  // 3. Persist. `TenantSubscriber.beforeUpdate` runs as defense in
+  //    depth: if the loaded row's `tenantId` no longer matches the
+  //    active tenant context (e.g., context mutated mid-request), the
+  //    subscriber refuses the write.
+  Object.assign(merchant, partial);
+  return repo.save(merchant);
+}
+```
+
+`delete` follows the same shape — load with tenant filter, forward
+check `ability.can('delete', merchant)`, then `repo.remove(merchant)`.
+For soft delete via `@DeleteDateColumn`, see the roadmap entry that
+covers the interaction with `accessibleBy()`.
+
+{% callout type="warning" title="Don't bypass the load step" %}
+Calling `repo.update({ id }, partial)` without first loading the row
+skips both the existence check and the forward authorization check.
+The subscriber's `beforeUpdate` still defends against cross-tenant
+writes, but the row will silently be a no-op for cross-tenant IDs
+rather than raising 404.
+{% /callout %}
+
+### Why the policy guard alone isn't enough
+
+`@CheckPolicies(...)` runs **before** the controller method, so the
+ability is checked against the action and subject TYPE, not the
+specific row. For rules like
+`can('approve', 'Merchant', { status: 'pending' })`, the guard sees
+only the rule's existence, not whether the loaded merchant's status
+actually matches. The forward check inside the service is what binds
+the rule's conditions to the concrete row.
+
 ## Auto-stamping inserts via `TenantSubscriber`
 
 Register the subscriber on your data source:
