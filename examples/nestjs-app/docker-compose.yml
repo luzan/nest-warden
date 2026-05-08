@@ -1,0 +1,25 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: mtc-example-postgres
+    environment:
+      POSTGRES_USER: app_user
+      POSTGRES_PASSWORD: local_password
+      POSTGRES_DB: nestwarden_dev
+    ports:
+      # Bound to a deliberately uncommon host port so the example doesn't
+      # collide with a developer's main Postgres on 5432 OR a secondary
+      # instance on 5433. Override via MTC_EXAMPLE_DB_PORT if 54329 is
+      # also taken on your machine.
+      - "${MTC_EXAMPLE_DB_PORT:-54329}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U app_user -d nestwarden_dev"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+    volumes:
+      - mtc-example-pgdata:/var/lib/postgresql/data
+      - ./sql/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+
+volumes:
+  mtc-example-pgdata:
