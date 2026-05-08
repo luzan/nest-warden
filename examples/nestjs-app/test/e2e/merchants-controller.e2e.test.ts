@@ -187,6 +187,36 @@ describe('GET /merchants — multi-tenant access control', () => {
     });
   });
 
+  describe('negative authorization: cannot subtracts from can', () => {
+    // The `cautious-approver` role grants the same positive
+    // `approve Merchant where status=pending` as `merchant-approver`,
+    // but adds `cannot('approve', 'Merchant', { name: 'Acme Plumbing' })`.
+    // m2 is the only pending merchant in ACME and its name is
+    // 'Acme Plumbing' (per the seed), so the cautious approver gets
+    // an empty result for /merchants/approvable while the regular
+    // approver gets [m2]. The cannot rule is scoped to `approve`; the
+    // role's `read` access is unaffected.
+
+    it('a cautious approver gets [] (the only pending merchant is excluded by cannot)', async () => {
+      const res = await request(app.getHttpServer())
+        .get('/merchants/approvable')
+        .set(fakeAuth('any-user-id', TENANT_ACME, ['cautious-approver']));
+
+      expect(res.status).toBe(200);
+      expect(res.body as unknown[]).toEqual([]);
+    });
+
+    it('the same cautious approver can still read all merchants — cannot is action-scoped', async () => {
+      const res = await request(app.getHttpServer())
+        .get('/merchants')
+        .set(fakeAuth('any-user-id', TENANT_ACME, ['cautious-approver']));
+
+      expect(res.status).toBe(200);
+      const ids = (res.body as { id: string }[]).map((r) => r.id);
+      expect(ids).toHaveLength(3); // m1, m2, m3 — read rule has no cannot counterpart
+    });
+  });
+
   describe('forward check: GET /merchants/:id', () => {
     it('Alice can read m1 (assigned)', async () => {
       const res = await request(app.getHttpServer())

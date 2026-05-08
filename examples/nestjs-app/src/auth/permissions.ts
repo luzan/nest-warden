@@ -86,4 +86,20 @@ export function defineAbilities(
     // both interpret the condition correctly.
     builder.can('approve', 'Merchant', { status: 'pending' } as never);
   }
+
+  // -----------------------------------------------------------------
+  // Cautious approver: demonstrates NEGATIVE authorization. Same
+  // positive grant as `merchant-approver` (approve pending), but
+  // adds a `cannot` rule that subtracts a specific merchant by name.
+  // The negative rule composes with the positive one — for the
+  // forbidden row, `cannot` wins regardless of role count.
+  //
+  // The `cannot` is scoped to the `approve` action only; the role's
+  // `read` access is unaffected.
+  // -----------------------------------------------------------------
+  if (ctx.roles.includes('cautious-approver')) {
+    builder.can('read', 'Merchant');
+    builder.can('approve', 'Merchant', { status: 'pending' } as never);
+    builder.cannot('approve', 'Merchant', { name: 'Acme Plumbing' } as never);
+  }
 }
