@@ -65,6 +65,7 @@ export const sidebarSections: readonly SidebarSection[] = [
     title: 'Roadmap',
     links: [
       { href: '/docs/roadmap/things-to-do', label: 'Things to do' },
+      { href: '/docs/roadmap/rfcs/001-roles', label: 'RFC 001: Roles' },
     ],
   },
 ];
