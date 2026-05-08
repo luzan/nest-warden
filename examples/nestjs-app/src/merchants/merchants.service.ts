@@ -1,11 +1,20 @@
 import { Inject, Injectable, NotFoundException, Scope } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
+import { permittedFieldsOf } from '@casl/ability/extra';
 import { DataSource } from 'typeorm';
 import { accessibleBy } from 'nest-warden/typeorm';
 import { TenantAbilityFactory, TenantContextService } from 'nest-warden/nestjs';
 import { Merchant } from '../entities/merchant.entity.js';
 import { relationshipGraph } from '../app.relationships.js';
 import type { AppAbility } from '../auth/permissions.js';
+
+const ALL_MERCHANT_FIELDS: readonly (keyof Merchant)[] = [
+  'id',
+  'tenantId',
+  'name',
+  'status',
+  'createdAt',
+];
 
 /**
  * Reads merchants the requesting user is allowed to see.
@@ -83,6 +92,45 @@ export class MerchantsService {
 
     Object.assign(merchant, partial);
     return repo.save(merchant);
+  }
+
+  /**
+   * Field-level projection. Loads a merchant the caller can `read`,
+   * then returns ONLY the fields the rule grants access to.
+   *
+   * CASL's `permittedFieldsOf` walks the rules matching (action,
+   * subject) and intersects their field arrays. A rule with no
+   * `fields` property grants every field in the `fieldsFrom`
+   * fallback. A rule with `fields: ['id', 'name']` grants only
+   * those.
+   *
+   * Two roles in this example exercise the difference:
+   *   - `merchant-viewer-public`: `can('read', 'Merchant',
+   *     ['id', 'name', 'status'])` — response excludes tenantId
+   *     and createdAt.
+   *   - `iso-admin`: `manage Merchant` (no field list) — response
+   *     includes every field.
+   */
+  async findOneProjected(id: string): Promise<Partial<Merchant>> {
+    const ability = await this.abilityFactory.build();
+    const repo = this.dataSource.getRepository(Merchant);
+
+    const merchant = await repo.findOne({
+      where: { id, tenantId: this.tenantContext.tenantId },
+    });
+    if (!merchant) throw new NotFoundException(`Merchant ${id} not found.`);
+
+    if (!ability.can('read', { ...merchant, __caslSubjectType__: 'Merchant' } as never)) {
+      throw new NotFoundException(`Merchant ${id} not found.`);
+    }
+
+    const fields = permittedFieldsOf(ability, 'read', 'Merchant', {
+      fieldsFrom: (rule) => rule.fields ?? [...ALL_MERCHANT_FIELDS],
+    });
+
+    return Object.fromEntries(
+      fields.map((f) => [f, merchant[f as keyof Merchant]]),
+    ) as Partial<Merchant>;
   }
 
   /**

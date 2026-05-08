@@ -102,4 +102,16 @@ export function defineAbilities(
     builder.can('approve', 'Merchant', { status: 'pending' } as never);
     builder.cannot('approve', 'Merchant', { name: 'Acme Plumbing' } as never);
   }
+
+  // -----------------------------------------------------------------
+  // Public viewer: demonstrates FIELD-LEVEL authorization. The role
+  // can read merchants in their tenant, but only specific fields:
+  // id, name, and status. tenantId and createdAt are not exposed.
+  // The library doesn't auto-mask responses — the controller uses
+  // CASL's `permittedFieldsOf` to project the loaded entity before
+  // returning it. See merchants.service#findOneProjected.
+  // -----------------------------------------------------------------
+  if (ctx.roles.includes('merchant-viewer-public')) {
+    builder.can('read', 'Merchant', ['id', 'name', 'status']);
+  }
 }
