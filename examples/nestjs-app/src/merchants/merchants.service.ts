@@ -40,10 +40,11 @@ export class MerchantsService {
     private readonly tenantContext: TenantContextService,
   ) {}
 
-  async findAll(): Promise<Merchant[]> {
+  async findAll(opts: { withDeleted?: boolean } = {}): Promise<Merchant[]> {
     const ability = await this.abilityFactory.build();
     const repo = this.dataSource.getRepository(Merchant);
     const qb = repo.createQueryBuilder('m');
+    if (opts.withDeleted) qb.withDeleted();
     accessibleBy(ability, 'read', 'Merchant', { alias: 'm', graph: relationshipGraph }).applyTo(qb);
     return qb.getMany();
   }
@@ -134,10 +135,16 @@ export class MerchantsService {
   }
 
   /**
-   * Hard-delete a merchant. Same gating pattern as `update`. Soft
-   * delete is intentionally not modeled here — see the roadmap for
-   * the slice that introduces `@DeleteDateColumn` and verifies its
-   * interaction with `accessibleBy()`.
+   * Soft-delete a merchant. Sets the entity's `@DeleteDateColumn`
+   * (`deletedAt`) instead of issuing a SQL DELETE. Subsequent reads
+   * via `findAll()` and `findOne()` skip soft-deleted rows because
+   * TypeORM auto-injects `WHERE deletedAt IS NULL`. Pass
+   * `withDeleted: true` to surface them again — useful for audit
+   * tooling.
+   *
+   * `accessibleBy()` and the soft-delete filter compose by AND, so
+   * restoring a soft-deleted row to a query never weakens the
+   * authorization predicate or the tenant predicate.
    */
   async remove(id: string): Promise<void> {
     const ability = await this.abilityFactory.build();
@@ -152,7 +159,7 @@ export class MerchantsService {
       throw new NotFoundException(`Merchant ${id} not found.`);
     }
 
-    await repo.remove(merchant);
+    await repo.softRemove(merchant);
   }
 
   async findOne(id: string): Promise<Merchant> {

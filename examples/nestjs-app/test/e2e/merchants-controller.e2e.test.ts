@@ -337,4 +337,42 @@ describe('GET /merchants — multi-tenant access control', () => {
       expect(res.status).toBe(404);
     });
   });
+
+  // -----------------------------------------------------------------
+  // Soft-delete behavior. Runs after the mutating-endpoints block —
+  // the prior describe issued DELETE on m3, which now sets the
+  // `deleted_at` column instead of issuing a SQL DELETE. The two
+  // assertions below verify both halves of the contract:
+  //
+  //   - default reads exclude soft-deleted rows (TypeORM applies
+  //     `WHERE deletedAt IS NULL` automatically; accessibleBy()
+  //     composes via AND).
+  //   - opt-in surfaces them again with the tenant predicate and
+  //     authorization predicate still applied.
+  // -----------------------------------------------------------------
+  describe('soft delete: deleted rows hidden by default, surfaced via withDeleted', () => {
+    it('default listing excludes the soft-deleted merchant', async () => {
+      const res = await request(app.getHttpServer())
+        .get('/merchants')
+        .set(fakeAuth('any-user-id', TENANT_ACME, ['iso-admin']));
+
+      expect(res.status).toBe(200);
+      const ids = (res.body as { id: string }[]).map((r) => r.id).sort();
+      // m3 was soft-deleted by the prior describe; only m1 and m2
+      // come back.
+      expect(ids).toEqual([MERCHANT_M1, MERCHANT_M2].sort());
+    });
+
+    it('with_deleted=true surfaces soft-deleted rows (still tenant-scoped)', async () => {
+      const res = await request(app.getHttpServer())
+        .get('/merchants?with_deleted=true')
+        .set(fakeAuth('any-user-id', TENANT_ACME, ['iso-admin']));
+
+      expect(res.status).toBe(200);
+      const ids = (res.body as { id: string }[]).map((r) => r.id).sort();
+      // All three ACME merchants reappear; m4 (BETA) stays
+      // excluded by the tenant predicate.
+      expect(ids).toEqual([MERCHANT_M1, MERCHANT_M2, MERCHANT_M3].sort());
+    });
+  });
 });
