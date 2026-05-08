@@ -251,6 +251,34 @@ describe('GET /merchants — multi-tenant access control', () => {
     });
   });
 
+  describe('field-level restrictions: GET /merchants/:id/projected', () => {
+    // CASL's `permittedFieldsOf` intersects the field arrays of every
+    // matching rule. The merchant-viewer-public role grants
+    // `can('read', 'Merchant', ['id', 'name', 'status'])` — only those
+    // three fields appear in the response. iso-admin's `manage`
+    // (no field list) grants every field.
+
+    it('a public viewer sees only id, name, and status', async () => {
+      const res = await request(app.getHttpServer())
+        .get(`/merchants/${MERCHANT_M1}/projected`)
+        .set(fakeAuth('any-user-id', TENANT_ACME, ['merchant-viewer-public']));
+
+      expect(res.status).toBe(200);
+      const keys = Object.keys(res.body as Record<string, unknown>).sort();
+      expect(keys).toEqual(['id', 'name', 'status']);
+    });
+
+    it('an iso-admin sees every field on the same projected endpoint', async () => {
+      const res = await request(app.getHttpServer())
+        .get(`/merchants/${MERCHANT_M1}/projected`)
+        .set(fakeAuth('any-user-id', TENANT_ACME, ['iso-admin']));
+
+      expect(res.status).toBe(200);
+      const keys = Object.keys(res.body as Record<string, unknown>).sort();
+      expect(keys).toEqual(['createdAt', 'id', 'name', 'status', 'tenantId']);
+    });
+  });
+
   // -----------------------------------------------------------------
   // Mutating endpoints. This block runs LAST so writes don't disturb
   // earlier read-only assertions: PATCH targets m1 and DELETE targets

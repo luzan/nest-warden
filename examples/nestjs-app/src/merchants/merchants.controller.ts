@@ -57,6 +57,18 @@ export class MerchantsController {
     return this.merchants.findOne(id);
   }
 
+  // Field-level projection demo. Same `read Merchant` gate at the
+  // controller layer; the service applies `permittedFieldsOf` to
+  // limit the response to fields the caller's rule covers. A user
+  // with `can('read', 'Merchant', ['id', 'name', 'status'])` sees
+  // only those keys; a user with broader manage rights sees the
+  // whole entity.
+  @CheckPolicies((ability: AppAbility) => ability.can('read', 'Merchant'))
+  @Get(':id/projected')
+  async getProjected(@Param('id') id: string): Promise<Partial<Merchant>> {
+    return this.merchants.findOneProjected(id);
+  }
+
   @CheckPolicies((ability: AppAbility) => ability.can('update', 'Merchant'))
   @Patch(':id')
   async patch(

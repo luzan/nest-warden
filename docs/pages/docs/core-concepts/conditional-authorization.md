@@ -141,6 +141,78 @@ For forward-check-only rules (you don't use `accessibleBy()` for that
 subject), CASL's full operator set still works — the compiler error
 only fires when the SQL adapter sees the operator.
 
+## Field-level restrictions
+
+Rules can scope **which fields** of a subject the action applies to,
+not just whether the action applies at all. Pass an array of field
+names as the third argument to `can`:
+
+```ts
+builder.can('read', 'Merchant', ['id', 'name', 'status']);
+```
+
+The rule grants `read Merchant` only for those fields. CASL's
+`permittedFieldsOf` (re-exported from `@casl/ability/extra`) walks
+every matching rule and returns the intersection of their field
+arrays:
+
+```ts
+import { permittedFieldsOf } from '@casl/ability/extra';
+
+const fields = permittedFieldsOf(ability, 'read', 'Merchant', {
+  fieldsFrom: (rule) => rule.fields ?? ALL_MERCHANT_FIELDS,
+});
+// → ['id', 'name', 'status']  (for the role above)
+```
+
+The `fieldsFrom` callback returns a fallback list for rules that
+**don't** specify fields — typically every column on the entity.
+A rule without a field list grants every field; a rule with one
+narrows the result.
+
+### nest-warden does NOT auto-mask responses
+
+Unlike value-level conditions (which the SQL compiler enforces in
+the database), field-level restrictions are **not** propagated to
+the response by the library. The controller has to project
+explicitly:
+
+```ts
+const merchant = await repo.findOne({ where: { id, tenantId: ctx.tenantId } });
+const fields = permittedFieldsOf(ability, 'read', 'Merchant', {
+  fieldsFrom: (rule) => rule.fields ?? ALL_MERCHANT_FIELDS,
+});
+
+return Object.fromEntries(fields.map((f) => [f, merchant[f]]));
+```
+
+Two reasons for this design:
+
+1. **The set of "all fields" lives outside CASL.** The library
+   doesn't know what columns your entity has. You provide them via
+   `fieldsFrom`.
+2. **Projection is a presentation concern.** Different endpoints
+   may want different shapes for the same authorized fields. A
+   library-level interceptor would prescribe one.
+
+For an end-to-end example, see the example app's
+`MerchantsService#findOneProjected` and the
+`merchant-viewer-public` role.
+
+### Forward checks against specific fields
+
+Per-field forward checks work too — useful for input-validation
+gates on update paths:
+
+```ts
+if (!ability.can('update', merchant, 'status')) {
+  throw new ForbiddenException('Cannot change status.');
+}
+```
+
+The matcher returns true only if at least one rule grants `update
+Merchant` AND covers the `status` field (or has no field list).
+
 ## Composition: rules + `cannot` + tenant predicate
 
 A realistic example combining everything:
