@@ -102,15 +102,6 @@
     "@ucast/core": "^1.10.2",
     "@ucast/mongo2js": "^1.4.0"
   },
-  "pnpm": {
-    "onlyBuiltDependencies": [
-      "esbuild",
-      "@nestjs/core",
-      "cpu-features",
-      "protobufjs",
-      "ssh2"
-    ]
-  },
   "devDependencies": {
     "@casl/ability": "^6.8.1",
     "@changesets/cli": "^2.27.9",

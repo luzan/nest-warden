@@ -71,9 +71,7 @@ describe('compileFieldOperator', () => {
   });
 
   it('error message reports "object" for non-array object operands', () => {
-    expect(() => compileFieldOperator('m.x', 'in', { not: 'array' }, bag())).toThrow(
-      /got object/,
-    );
+    expect(() => compileFieldOperator('m.x', 'in', { not: 'array' }, bag())).toThrow(/got object/);
   });
 
   it('throws UnsupportedOperatorError for an unknown operator', () => {

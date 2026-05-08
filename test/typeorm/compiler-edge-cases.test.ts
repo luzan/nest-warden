@@ -10,9 +10,7 @@ import { UnsupportedOperatorError } from '../../src/core/errors.js';
 
 describe('compileCondition — edge cases', () => {
   it('throws UnsupportedOperatorError for unknown compound operators (e.g., $nor)', () => {
-    const cond = new CompoundCondition('nor', [
-      new FieldCondition('eq', 'status', 'active'),
-    ]);
+    const cond = new CompoundCondition('nor', [new FieldCondition('eq', 'status', 'active')]);
     const bag = new ParameterBag();
     expect(() => compileCondition(cond, { alias: 'm', bag })).toThrow(UnsupportedOperatorError);
   });

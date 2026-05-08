@@ -78,7 +78,10 @@ describe('SqlFragment helpers', () => {
 
   describe('mergeParams', () => {
     it('merges multiple bags; later wins on collision', () => {
-      const r = mergeParams([{ a: 1, b: 2 }, { b: 3, c: 4 }]);
+      const r = mergeParams([
+        { a: 1, b: 2 },
+        { b: 3, c: 4 },
+      ]);
       expect(r).toEqual({ a: 1, b: 3, c: 4 });
     });
 

@@ -116,7 +116,7 @@ export class TenantSubscriber implements EntitySubscriberInterface {
     const newValue = (entity as Record<string, unknown>)[tenantField];
     if (newValue !== undefined && newValue !== resolved) {
       throw new Error(
-        `TenantSubscriber: refusing to update "${/* c8 ignore next */(targetCtor as { name?: string }).name ?? '?'}" ` +
+        `TenantSubscriber: refusing to update "${/* c8 ignore next */ (targetCtor as { name?: string }).name ?? '?'}" ` +
           `with new ${tenantField}=${safeFormat(newValue)} (must equal active tenant=${safeFormat(resolved)}).`,
       );
     }

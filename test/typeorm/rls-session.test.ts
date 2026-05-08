@@ -1,8 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-  DEFAULT_RLS_SESSION_VARIABLE,
-  buildRlsSet,
-} from '../../src/typeorm/rls-session.js';
+import { DEFAULT_RLS_SESSION_VARIABLE, buildRlsSet } from '../../src/typeorm/rls-session.js';
 
 describe('buildRlsSet', () => {
   it('builds a parameterized set_config call with the default variable name', () => {

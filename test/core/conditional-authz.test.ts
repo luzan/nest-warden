@@ -15,9 +15,9 @@ describe('Conditional authorization (forward check via CASL mongoQueryMatcher)',
     expect(ability.can('read', asMerchant({ id: 'm1', tenantId: 't1', status: 'active' }))).toBe(
       true,
     );
-    expect(
-      ability.can('read', asMerchant({ id: 'm2', tenantId: 't1', status: 'inactive' })),
-    ).toBe(false);
+    expect(ability.can('read', asMerchant({ id: 'm2', tenantId: 't1', status: 'inactive' }))).toBe(
+      false,
+    );
   });
 
   it('$in condition matches any value in the set', () => {
@@ -87,12 +87,12 @@ describe('Conditional authorization (forward check via CASL mongoQueryMatcher)',
     b.cannot('manage', 'Merchant', { status: 'closed' });
     const ability = b.build();
 
-    expect(
-      ability.can('manage', asMerchant({ id: 'm1', tenantId: 't1', status: 'active' })),
-    ).toBe(true);
-    expect(
-      ability.can('manage', asMerchant({ id: 'm2', tenantId: 't1', status: 'closed' })),
-    ).toBe(false);
+    expect(ability.can('manage', asMerchant({ id: 'm1', tenantId: 't1', status: 'active' }))).toBe(
+      true,
+    );
+    expect(ability.can('manage', asMerchant({ id: 'm2', tenantId: 't1', status: 'closed' }))).toBe(
+      false,
+    );
   });
 
   it('$ne (not-equal) matches values different from the operand', () => {
@@ -100,12 +100,12 @@ describe('Conditional authorization (forward check via CASL mongoQueryMatcher)',
     b.can('read', 'Merchant', { status: { $ne: 'closed' } });
     const ability = b.build();
 
-    expect(
-      ability.can('read', asMerchant({ id: 'm1', tenantId: 't1', status: 'active' })),
-    ).toBe(true);
-    expect(
-      ability.can('read', asMerchant({ id: 'm2', tenantId: 't1', status: 'closed' })),
-    ).toBe(false);
+    expect(ability.can('read', asMerchant({ id: 'm1', tenantId: 't1', status: 'active' }))).toBe(
+      true,
+    );
+    expect(ability.can('read', asMerchant({ id: 'm2', tenantId: 't1', status: 'closed' }))).toBe(
+      false,
+    );
   });
 
   it('$nin (not-in) matches values outside the set', () => {
@@ -113,11 +113,11 @@ describe('Conditional authorization (forward check via CASL mongoQueryMatcher)',
     b.can('read', 'Merchant', { status: { $nin: ['closed', 'inactive'] } });
     const ability = b.build();
 
-    expect(
-      ability.can('read', asMerchant({ id: 'm1', tenantId: 't1', status: 'active' })),
-    ).toBe(true);
-    expect(
-      ability.can('read', asMerchant({ id: 'm2', tenantId: 't1', status: 'closed' })),
-    ).toBe(false);
+    expect(ability.can('read', asMerchant({ id: 'm1', tenantId: 't1', status: 'active' }))).toBe(
+      true,
+    );
+    expect(ability.can('read', asMerchant({ id: 'm2', tenantId: 't1', status: 'closed' }))).toBe(
+      false,
+    );
   });
 });

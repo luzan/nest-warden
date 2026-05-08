@@ -94,9 +94,7 @@ export class TenantPoliciesGuard<TAbility extends AnyAbility = AnyAbility> imple
 
     const allowed = handlers.every((handler) => callPolicyHandler(handler, ability, request));
     if (!allowed) {
-      throw new ForbiddenException(
-        'You do not have sufficient permission to perform this action.',
-      );
+      throw new ForbiddenException('You do not have sufficient permission to perform this action.');
     }
     return true;
   }

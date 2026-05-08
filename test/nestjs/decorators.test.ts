@@ -1,11 +1,7 @@
 import 'reflect-metadata';
 import { describe, expect, it } from 'vitest';
 import { ExecutionContext } from '@nestjs/common';
-import {
-  AllowCrossTenant,
-  CheckPolicies,
-  Public,
-} from '../../src/nestjs/decorators/index.js';
+import { AllowCrossTenant, CheckPolicies, Public } from '../../src/nestjs/decorators/index.js';
 import { currentTenantFactory } from '../../src/nestjs/decorators/current-tenant.decorator.js';
 import {
   ALLOW_CROSS_TENANT_KEY,
@@ -53,9 +49,9 @@ describe('decorators — metadata storage', () => {
   });
 
   it('@AllowCrossTenant(reason) stores the reason code', () => {
-    expect(
-      Reflect.getMetadata(ALLOW_CROSS_TENANT_KEY, handlerOf('crossTenantEndpoint')),
-    ).toBe('platform-staff-impersonation');
+    expect(Reflect.getMetadata(ALLOW_CROSS_TENANT_KEY, handlerOf('crossTenantEndpoint'))).toBe(
+      'platform-staff-impersonation',
+    );
   });
 });
 

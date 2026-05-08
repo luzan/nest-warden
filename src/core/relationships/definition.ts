@@ -20,10 +20,7 @@ import type { RelationshipResolver } from './resolver.js';
  *     accessor: (agent: Agent) => agent.merchants,
  *   });
  */
-export interface Relationship<
-  TFrom extends string = string,
-  TTo extends string = string,
-> {
+export interface Relationship<TFrom extends string = string, TTo extends string = string> {
   /** Unique identifier referenced from `$relatedTo.path`. */
   readonly name: string;
   /** Source subject type (string id, e.g., `'Agent'`). */
@@ -61,9 +58,7 @@ export interface Relationship<
  * instance(s). The matcher consumes the result, normalizing scalars and
  * arrays uniformly.
  */
-export type RelationshipAccessor = (
-  fromInstance: unknown,
-) => RelationshipAccessorResult;
+export type RelationshipAccessor = (fromInstance: unknown) => RelationshipAccessorResult;
 
 /**
  * Permitted return shapes for a {@link RelationshipAccessor}.

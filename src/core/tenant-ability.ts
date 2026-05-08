@@ -1,4 +1,9 @@
-import { type AbilityTuple, type MongoAbility, type MongoQuery, createMongoAbility } from '@casl/ability';
+import {
+  type AbilityTuple,
+  type MongoAbility,
+  type MongoQuery,
+  createMongoAbility,
+} from '@casl/ability';
 
 /**
  * Public alias for the ability instances produced by `TenantAbilityBuilder`.

@@ -9,9 +9,10 @@ import type { TenantContext } from '../../src/core/tenant-context.js';
 type AppAbility = MongoAbility;
 const ctx: TenantContext<string> = { tenantId: 't1', subjectId: 'u1', roles: ['agent'] };
 
-function build(
-  options: TenantAbilityModuleOptions<AppAbility, string>,
-): { factory: TenantAbilityFactory<AppAbility, string>; svc: TenantContextService<string> } {
+function build(options: TenantAbilityModuleOptions<AppAbility, string>): {
+  factory: TenantAbilityFactory<AppAbility, string>;
+  svc: TenantContextService<string>;
+} {
   const svc = new TenantContextService<string>();
   const factory = new TenantAbilityFactory<AppAbility, string>(options, svc);
   return { factory, svc };

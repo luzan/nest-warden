@@ -84,7 +84,6 @@ describe('buildAccessibleSql — basic conditions', () => {
     );
   });
 
-
   it('uses the parameterPrefix option for parameter names', () => {
     const b = new TenantAbilityBuilder(createMongoAbility, ctx);
     b.can('read', 'Merchant', { status: 'active' });

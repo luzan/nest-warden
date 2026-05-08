@@ -11,7 +11,9 @@ import type { TenantContext } from '../../src/core/tenant-context.js';
 
 const ctx: TenantContext<string> = { tenantId: 't1', subjectId: 'u1', roles: ['agent'] };
 
-const fakeExecCtx = (overrides: { request?: object; handler?: () => unknown; cls?: object } = {}): ExecutionContext => {
+const fakeExecCtx = (
+  overrides: { request?: object; handler?: () => unknown; cls?: object } = {},
+): ExecutionContext => {
   const request = overrides.request ?? {};
   const handler = overrides.handler ?? function fakeHandler(): void {};
   const cls = overrides.cls ?? class FakeController {};
@@ -30,9 +32,7 @@ const fakeNext = (): CallHandler => ({
   handle: () => of('handler-output'),
 });
 
-function build(
-  options: TenantAbilityModuleOptions<never, string>,
-): {
+function build(options: TenantAbilityModuleOptions<never, string>): {
   interceptor: TenantContextInterceptor<string>;
   svc: TenantContextService<string>;
 } {

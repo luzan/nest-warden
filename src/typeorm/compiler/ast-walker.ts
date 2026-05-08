@@ -49,10 +49,7 @@ const COMPOUND_OPS = new Set(['and', 'or', 'not']);
  * Throws {@link UnsupportedOperatorError} for any operator outside our
  * v1 set — see {@link compileFieldOperator} and `$relatedTo`.
  */
-export function compileCondition(
-  condition: Condition,
-  ctx: CompileContext,
-): SqlFragment {
+export function compileCondition(condition: Condition, ctx: CompileContext): SqlFragment {
   if (condition instanceof FieldCondition) {
     return compileFieldCondition(condition, ctx);
   }

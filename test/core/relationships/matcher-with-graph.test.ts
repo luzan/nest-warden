@@ -4,7 +4,9 @@ import { createTenantConditionsMatcher } from '../../../src/core/matcher.js';
 import { RelationshipGraph } from '../../../src/core/relationships/graph.js';
 import { foreignKey, joinTable } from '../../../src/core/relationships/resolver.js';
 
-interface PaymentEager { merchant?: { id: string; agents?: Array<{ id: string }> } }
+interface PaymentEager {
+  merchant?: { id: string; agents?: Array<{ id: string }> };
+}
 
 const buildGraph = (): RelationshipGraph =>
   new RelationshipGraph()
@@ -27,7 +29,10 @@ const buildGraph = (): RelationshipGraph =>
       accessor: (m) => (m as { agents?: Array<{ id: string }> }).agents,
     });
 
-const tag = (kind: string, props: Record<string, unknown>) => ({ ...props, __caslSubjectType__: kind });
+const tag = (kind: string, props: Record<string, unknown>) => ({
+  ...props,
+  __caslSubjectType__: kind,
+});
 
 describe('createTenantConditionsMatcher — end-to-end with @casl/ability', () => {
   it('returns mongoQueryMatcher when no graph is given', () => {
@@ -132,15 +137,12 @@ describe('createTenantConditionsMatcher — end-to-end with @casl/ability', () =
       { conditionsMatcher: matcher },
     );
 
-    expect(
-      ability.can(
-        'read',
-        tag('Payment', { id: 'p1', merchant: { id: 'm-allowed' } }),
-      ),
-    ).toBe(true);
-    expect(
-      ability.can('read', tag('Payment', { id: 'p2', merchant: { id: 'm-other' } })),
-    ).toBe(false);
+    expect(ability.can('read', tag('Payment', { id: 'p1', merchant: { id: 'm-allowed' } }))).toBe(
+      true,
+    );
+    expect(ability.can('read', tag('Payment', { id: 'p2', merchant: { id: 'm-other' } }))).toBe(
+      false,
+    );
   });
 
   it('rules with no conditions are matched globally (CASL contract)', () => {
@@ -149,14 +151,13 @@ describe('createTenantConditionsMatcher — end-to-end with @casl/ability', () =
     // path through a real ability instance.
     const graph = buildGraph();
     const matcher = createTenantConditionsMatcher({ graph });
-    const ability = new Ability(
-      [{ action: 'read', subject: 'Merchant' }],
-      { conditionsMatcher: matcher },
-    );
+    const ability = new Ability([{ action: 'read', subject: 'Merchant' }], {
+      conditionsMatcher: matcher,
+    });
     expect(ability.can('read', 'Merchant')).toBe(true);
   });
 
-  it("returns a function regardless of conditions shape (graph-less behavior)", () => {
+  it('returns a function regardless of conditions shape (graph-less behavior)', () => {
     const graph = buildGraph();
     const matcher = createTenantConditionsMatcher({ graph });
     const m = matcher({ status: 'active' });

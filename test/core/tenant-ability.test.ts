@@ -7,12 +7,12 @@ describe('createTenantAbility (raw factory)', () => {
       { action: 'read', subject: 'Merchant', conditions: { tenantId: 't1' } },
     ]);
 
-    expect(
-      ability.can('read', { __caslSubjectType__: 'Merchant', tenantId: 't1' } as never),
-    ).toBe(true);
-    expect(
-      ability.can('read', { __caslSubjectType__: 'Merchant', tenantId: 't2' } as never),
-    ).toBe(false);
+    expect(ability.can('read', { __caslSubjectType__: 'Merchant', tenantId: 't1' } as never)).toBe(
+      true,
+    );
+    expect(ability.can('read', { __caslSubjectType__: 'Merchant', tenantId: 't2' } as never)).toBe(
+      false,
+    );
   });
 
   it('rules with no conditions allow all subjects of the type (raw construction is uncheck-ed)', () => {

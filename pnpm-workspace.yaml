@@ -1,0 +1,14 @@
+packages:
+  - '.'
+
+# Native build approval (pnpm 11). Without this, postinstall scripts
+# for these packages don't run, leaving native modules unbuilt — e.g.
+# better-sqlite3 fails with "Cannot execute on default connection"
+# when TypeORM can't open the SQLite binding.
+allowBuilds:
+  '@nestjs/core': true
+  better-sqlite3: true
+  cpu-features: true
+  esbuild: true
+  protobufjs: true
+  ssh2: true

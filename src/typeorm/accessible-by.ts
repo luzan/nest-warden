@@ -104,7 +104,9 @@ export interface AccessibleBySql {
    * applies a tautological-false WHERE (`1 = 0`) so the query returns no
    * rows — this is the safer default than silently bypassing the check.
    */
-  applyTo<TBuilder extends { andWhere: (sql: string, params?: Record<string, unknown>) => TBuilder }>(
+  applyTo<
+    TBuilder extends { andWhere: (sql: string, params?: Record<string, unknown>) => TBuilder },
+  >(
     qb: TBuilder,
   ): TBuilder;
 }
@@ -129,9 +131,9 @@ export function accessibleBy(
   const sql = buildAccessibleSql(ability, action, subjectType, options);
   return {
     sql,
-    applyTo<TBuilder extends { andWhere: (sql: string, params?: Record<string, unknown>) => TBuilder }>(
-      qb: TBuilder,
-    ): TBuilder {
+    applyTo<
+      TBuilder extends { andWhere: (sql: string, params?: Record<string, unknown>) => TBuilder },
+    >(qb: TBuilder): TBuilder {
       if (!sql) {
         return qb.andWhere('1 = 0');
       }

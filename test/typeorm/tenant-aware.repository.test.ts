@@ -65,26 +65,38 @@ describe('TenantAwareRepository — find / findBy / findOne', () => {
   const tenantProvider = (tenantId: string) => () => tenantId;
 
   it('find() filters by the active tenant', async () => {
-    const repo = new TenantAwareRepository(dataSource.getRepository(Merchant), tenantProvider('t1'));
+    const repo = new TenantAwareRepository(
+      dataSource.getRepository(Merchant),
+      tenantProvider('t1'),
+    );
     const rows = await repo.find();
     expect(rows.map((r) => r.id).sort()).toEqual(['m1', 'm2']);
   });
 
   it('find() with explicit where merges the tenant predicate', async () => {
-    const repo = new TenantAwareRepository(dataSource.getRepository(Merchant), tenantProvider('t1'));
+    const repo = new TenantAwareRepository(
+      dataSource.getRepository(Merchant),
+      tenantProvider('t1'),
+    );
     const rows = await repo.find({ where: { status: 'active' } });
     expect(rows.map((r) => r.id)).toEqual(['m1']);
   });
 
   it('find() with array where applies tenant predicate to each branch', async () => {
-    const repo = new TenantAwareRepository(dataSource.getRepository(Merchant), tenantProvider('t1'));
+    const repo = new TenantAwareRepository(
+      dataSource.getRepository(Merchant),
+      tenantProvider('t1'),
+    );
     const rows = await repo.find({ where: [{ status: 'active' }, { status: 'closed' }] });
     expect(rows.every((r) => r.tenantId === 't1')).toBe(true);
     expect(rows).toHaveLength(2);
   });
 
   it('find() with array where preserves explicit tenantId in any branch (idempotent)', async () => {
-    const repo = new TenantAwareRepository(dataSource.getRepository(Merchant), tenantProvider('t1'));
+    const repo = new TenantAwareRepository(
+      dataSource.getRepository(Merchant),
+      tenantProvider('t1'),
+    );
     // First branch: explicit tenantId t2 (different); second: implicit t1.
     const rows = await repo.find({
       where: [{ tenantId: 't2', status: 'active' }, { status: 'closed' }],
@@ -94,13 +106,19 @@ describe('TenantAwareRepository — find / findBy / findOne', () => {
   });
 
   it('findBy() applies the tenant predicate', async () => {
-    const repo = new TenantAwareRepository(dataSource.getRepository(Merchant), tenantProvider('t1'));
+    const repo = new TenantAwareRepository(
+      dataSource.getRepository(Merchant),
+      tenantProvider('t1'),
+    );
     const rows = await repo.findBy({ status: 'active' });
     expect(rows.map((r) => r.id)).toEqual(['m1']);
   });
 
   it('findOne() respects the tenant predicate', async () => {
-    const repo = new TenantAwareRepository(dataSource.getRepository(Merchant), tenantProvider('t1'));
+    const repo = new TenantAwareRepository(
+      dataSource.getRepository(Merchant),
+      tenantProvider('t1'),
+    );
     const m3 = await repo.findOne({ where: { id: 'm3' } });
     expect(m3).toBeNull();
     const m1 = await repo.findOne({ where: { id: 'm1' } });
@@ -108,20 +126,29 @@ describe('TenantAwareRepository — find / findBy / findOne', () => {
   });
 
   it('findOneBy() respects the tenant predicate', async () => {
-    const repo = new TenantAwareRepository(dataSource.getRepository(Merchant), tenantProvider('t1'));
+    const repo = new TenantAwareRepository(
+      dataSource.getRepository(Merchant),
+      tenantProvider('t1'),
+    );
     const m3 = await repo.findOneBy({ id: 'm3' });
     expect(m3).toBeNull();
   });
 
   it('findAndCount() returns scoped rows + count', async () => {
-    const repo = new TenantAwareRepository(dataSource.getRepository(Merchant), tenantProvider('t1'));
+    const repo = new TenantAwareRepository(
+      dataSource.getRepository(Merchant),
+      tenantProvider('t1'),
+    );
     const [rows, total] = await repo.findAndCount();
     expect(total).toBe(2);
     expect(rows.every((r) => r.tenantId === 't1')).toBe(true);
   });
 
   it('count() returns scoped count', async () => {
-    const repo = new TenantAwareRepository(dataSource.getRepository(Merchant), tenantProvider('t1'));
+    const repo = new TenantAwareRepository(
+      dataSource.getRepository(Merchant),
+      tenantProvider('t1'),
+    );
     expect(await repo.count()).toBe(2);
   });
 
@@ -138,7 +165,10 @@ describe('TenantAwareRepository — find / findBy / findOne', () => {
   });
 
   it('respects an explicit tenant value in where (no overwrite)', async () => {
-    const repo = new TenantAwareRepository(dataSource.getRepository(Merchant), tenantProvider('t1'));
+    const repo = new TenantAwareRepository(
+      dataSource.getRepository(Merchant),
+      tenantProvider('t1'),
+    );
     // Rare but valid: the consumer wants to filter by a different tenant
     // explicitly. Auto-injection should NOT overwrite an explicit value.
     const rows = await repo.find({ where: { tenantId: 't2' } });
@@ -146,7 +176,10 @@ describe('TenantAwareRepository — find / findBy / findOne', () => {
   });
 
   it('non-tenant entities (no @TenantColumn) are passthrough', async () => {
-    const repo = new TenantAwareRepository(dataSource.getRepository(Currency), tenantProvider('t1'));
+    const repo = new TenantAwareRepository(
+      dataSource.getRepository(Currency),
+      tenantProvider('t1'),
+    );
     expect(repo.tenantField).toBeUndefined();
     const rows = await repo.find();
     expect(rows.map((r) => r.code).sort()).toEqual(['EUR', 'USD']);

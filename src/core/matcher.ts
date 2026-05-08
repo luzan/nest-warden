@@ -67,9 +67,7 @@ export function createTenantConditionsMatcher(
 
     const restKeys = Object.keys(rest);
     const restMatcher =
-      restKeys.length === 0
-        ? (): boolean => true
-        : mongoQueryMatcher(rest as MongoQuery);
+      restKeys.length === 0 ? (): boolean => true : mongoQueryMatcher(rest as MongoQuery);
 
     return (object: Record<string, unknown>): boolean => {
       if (!restMatcher(object)) return false;

@@ -33,10 +33,7 @@ import { fragment, type SqlFragment } from './sql-fragment.js';
  * Phase 3 v1 supports `foreign-key` and `join-table` resolvers natively;
  * `custom` resolvers embed consumer-provided SQL.
  */
-export function compileRelatedTo(
-  condition: RelatedToCondition,
-  ctx: CompileContext,
-): SqlFragment {
+export function compileRelatedTo(condition: RelatedToCondition, ctx: CompileContext): SqlFragment {
   /* c8 ignore next 3 */
   // Defensive: ast-walker checks for the graph before dispatching here.
   if (!ctx.graph) throw new Error('compileRelatedTo invoked without a graph in context.');
@@ -159,8 +156,7 @@ function buildForeignKeyHop(
   // Subsequent hop: INNER JOIN against the previous alias inside the subquery.
   return {
     fromClause: '',
-    joinClause:
-      `INNER JOIN ${toTable} ${myAlias} ON ${prevAlias}.${resolver.fromColumn} = ${myAlias}.${toColumn}`,
+    joinClause: `INNER JOIN ${toTable} ${myAlias} ON ${prevAlias}.${resolver.fromColumn} = ${myAlias}.${toColumn}`,
     toAlias: myAlias,
     toPrimaryKey: toColumn,
   };

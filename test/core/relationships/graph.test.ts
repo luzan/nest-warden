@@ -1,9 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { foreignKey, joinTable } from '../../../src/core/relationships/resolver.js';
-import {
-  DEFAULT_MAX_DEPTH,
-  RelationshipGraph,
-} from '../../../src/core/relationships/graph.js';
+import { DEFAULT_MAX_DEPTH, RelationshipGraph } from '../../../src/core/relationships/graph.js';
 import {
   DuplicateRelationshipError,
   InvalidRelationshipPathError,
@@ -58,19 +55,20 @@ describe('RelationshipGraph — define / has / get', () => {
   it('rejects duplicate relationship names', () => {
     const g = new RelationshipGraph();
     g.define({ name: 'dup', from: 'A', to: 'B', resolver: fk('b_id') });
-    expect(() =>
-      g.define({ name: 'dup', from: 'A', to: 'C', resolver: fk('c_id') }),
-    ).toThrow(DuplicateRelationshipError);
+    expect(() => g.define({ name: 'dup', from: 'A', to: 'C', resolver: fk('c_id') })).toThrow(
+      DuplicateRelationshipError,
+    );
   });
 
   it('all() returns all registered relationships', () => {
     const g = buildSampleGraph();
     expect(g.all()).toHaveLength(3);
-    expect(g.all().map((r) => r.name).sort()).toEqual([
-      'agent_of_merchant',
-      'iso_of_agent',
-      'merchant_of_payment',
-    ]);
+    expect(
+      g
+        .all()
+        .map((r) => r.name)
+        .sort(),
+    ).toEqual(['agent_of_merchant', 'iso_of_agent', 'merchant_of_payment']);
   });
 
   it('define() returns the graph for fluent chaining', () => {
@@ -224,11 +222,7 @@ describe('RelationshipGraph — resolvePath()', () => {
 
   it('preserves the order of hops in the result', () => {
     const g = buildSampleGraph();
-    const p = g.resolvePath([
-      'merchant_of_payment',
-      'agent_of_merchant',
-      'iso_of_agent',
-    ]);
+    const p = g.resolvePath(['merchant_of_payment', 'agent_of_merchant', 'iso_of_agent']);
     expect(p.hops.map((h) => h.name)).toEqual([
       'merchant_of_payment',
       'agent_of_merchant',

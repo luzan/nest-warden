@@ -42,9 +42,9 @@ import { IS_PUBLIC_KEY, MTC_OPTIONS } from './tokens.js';
  * APP_INTERCEPTOR.
  */
 @Injectable({ scope: Scope.REQUEST })
-export class TenantContextInterceptor<TId extends TenantIdValue = string>
-  implements NestInterceptor
-{
+export class TenantContextInterceptor<
+  TId extends TenantIdValue = string,
+> implements NestInterceptor {
   constructor(
     @Inject(MTC_OPTIONS) private readonly options: TenantAbilityModuleOptions<never, TId>,
     @Inject(TenantContextService) private readonly contextService: TenantContextService<TId>,

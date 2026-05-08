@@ -121,7 +121,9 @@ export class DuplicateRelationshipError extends MultiTenantCaslError {
   }
 }
 
-function stringifyActionOrSubject(value: string | readonly string[] | undefined): string | undefined {
+function stringifyActionOrSubject(
+  value: string | readonly string[] | undefined,
+): string | undefined {
   if (value === undefined) return undefined;
   return Array.isArray(value) ? value.join(',') : (value as string);
 }

@@ -20,16 +20,13 @@ function build(options: TenantAbilityModuleOptions<AppAbility, string>): {
 } {
   const svc = new TenantContextService<string>();
   const factory = new TenantAbilityFactory<AppAbility, string>(options, svc);
-  const guard = new TenantPoliciesGuard<AppAbility>(
-    new Reflector(),
-    factory,
-    svc,
-    options,
-  );
+  const guard = new TenantPoliciesGuard<AppAbility>(new Reflector(), factory, svc, options);
   return { guard, svc };
 }
 
-const fakeExecCtx = (overrides: { request?: object; handler?: () => unknown; cls?: object } = {}): ExecutionContext => {
+const fakeExecCtx = (
+  overrides: { request?: object; handler?: () => unknown; cls?: object } = {},
+): ExecutionContext => {
   const request = overrides.request ?? {};
   const handler = overrides.handler ?? function fakeHandler(): void {};
   const cls = overrides.cls ?? class FakeController {};

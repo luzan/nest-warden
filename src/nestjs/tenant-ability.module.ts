@@ -42,10 +42,9 @@ import { MTC_OPTIONS } from './tokens.js';
  */
 @Module({})
 export class TenantAbilityModule {
-  static forRoot<
-    TAbility extends AnyAbility = AnyAbility,
-    TId extends TenantIdValue = string,
-  >(options: TenantAbilityModuleOptions<TAbility, TId>): DynamicModule {
+  static forRoot<TAbility extends AnyAbility = AnyAbility, TId extends TenantIdValue = string>(
+    options: TenantAbilityModuleOptions<TAbility, TId>,
+  ): DynamicModule {
     const optionsProvider: Provider = {
       provide: MTC_OPTIONS,
       useValue: options,

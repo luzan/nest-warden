@@ -50,10 +50,7 @@ describe('validateTenantRules', () => {
 
   it('rejects a rule with conditions but no tenantField', () => {
     expect(() =>
-      validateTenantRules(
-        [{ action: 'read', subject: 'M', conditions: { agentId: 'u1' } }],
-        opts,
-      ),
+      validateTenantRules([{ action: 'read', subject: 'M', conditions: { agentId: 'u1' } }], opts),
     ).toThrow(CrossTenantViolationError);
   });
 

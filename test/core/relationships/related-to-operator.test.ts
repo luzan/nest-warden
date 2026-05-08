@@ -60,7 +60,13 @@ describe('evaluateRelatedTo — forward-direction $relatedTo', () => {
     const g = buildGraph();
     const payment: Payment = {
       id: 'p1',
-      merchant: { id: 'm1', agents: [{ id: 'a1', name: 'Alice' }, { id: 'a2', name: 'Bob' }] },
+      merchant: {
+        id: 'm1',
+        agents: [
+          { id: 'a1', name: 'Alice' },
+          { id: 'a2', name: 'Bob' },
+        ],
+      },
     };
     expect(
       evaluateRelatedTo(
@@ -102,11 +108,7 @@ describe('evaluateRelatedTo — forward-direction $relatedTo', () => {
     const g = buildGraph();
     const payment: Payment = { id: 'p1', merchant: null };
     expect(
-      evaluateRelatedTo(
-        payment,
-        { path: ['merchant_of_payment'], where: { id: 'm1' } },
-        g,
-      ),
+      evaluateRelatedTo(payment, { path: ['merchant_of_payment'], where: { id: 'm1' } }, g),
     ).toBe(false);
   });
 
@@ -137,16 +139,22 @@ describe('evaluateRelatedTo — forward-direction $relatedTo', () => {
       resolver: foreignKey({ fromColumn: 'b_id' }),
       // accessor intentionally omitted
     });
-    expect(
-      evaluateRelatedTo({ id: 'a1' }, { path: ['no_accessor'], where: { id: 'b1' } }, g),
-    ).toBe(false);
+    expect(evaluateRelatedTo({ id: 'a1' }, { path: ['no_accessor'], where: { id: 'b1' } }, g)).toBe(
+      false,
+    );
   });
 
   it('honors mongo operators in the leaf where', () => {
     const g = buildGraph();
     const payment: Payment = {
       id: 'p1',
-      merchant: { id: 'm1', agents: [{ id: 'a1', name: 'Alice' }, { id: 'a2', name: 'Bob' }] },
+      merchant: {
+        id: 'm1',
+        agents: [
+          { id: 'a1', name: 'Alice' },
+          { id: 'a2', name: 'Bob' },
+        ],
+      },
     };
     expect(
       evaluateRelatedTo(
