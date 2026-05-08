@@ -1,3 +1,10 @@
+packages:
+  - '.'
+
+# Native build approval (pnpm 11). Without this, postinstall scripts
+# for these packages don't run. Same rationale as the root
+# pnpm-workspace.yaml — keep this file in sync if you add or remove
+# native deps in the example.
 allowBuilds:
   '@nestjs/core': true
   cpu-features: true

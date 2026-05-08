@@ -87,3 +87,43 @@ jobs:
             echo "::error::published tarball exceeds 200 KB budget"
             exit 1
           fi
+
+  example-e2e:
+    name: Example E2E (Postgres via testcontainers)
+    runs-on: ubuntu-latest
+    needs: [build]
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with: { version: 9 }
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      # 1. Install + build the parent library so dist/ exists. The
+      #    example consumes it via `nest-warden: file:../..`.
+      - name: Install parent
+        run: pnpm install --frozen-lockfile
+      - name: Build parent
+        run: pnpm build
+
+      # 2. Install the example with --ignore-workspace. The example
+      #    is intentionally NOT in the parent's pnpm workspace — its
+      #    own pnpm-workspace.yaml declares a single-package
+      #    workspace at examples/nestjs-app/.
+      - name: Install example
+        working-directory: examples/nestjs-app
+        run: pnpm install --ignore-workspace --frozen-lockfile
+
+      # 3. Pre-pull the Postgres image so testcontainers doesn't
+      #    spend time on the first run pulling it inside the test.
+      - name: Pre-pull Postgres image
+        run: docker pull postgres:16-alpine
+
+      # 4. Run the 14 E2E tests. testcontainers picks a random free
+      #    port so the host's 5432 / 54329 / etc. don't matter.
+      - name: Run example E2E
+        working-directory: examples/nestjs-app
+        run: pnpm test:e2e
