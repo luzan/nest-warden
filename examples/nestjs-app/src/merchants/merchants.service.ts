@@ -55,6 +55,58 @@ export class MerchantsService {
     return qb.getMany();
   }
 
+  /**
+   * Update a merchant. Demonstrates the standard write pattern:
+   *
+   *   1. Tenant-scoped load — `findOne` with `tenantId` filter so
+   *      cross-tenant IDs surface as 404, not as authorization
+   *      errors. Avoids leaking existence across tenant boundaries.
+   *   2. Forward authorization check — `ability.can('update',
+   *      merchant)` gates per-row. Cheaper than rebuilding ability
+   *      twice and necessary for rules with row-level conditions.
+   *   3. Persist via the same repository; `TenantSubscriber.beforeUpdate`
+   *      runs as defense-in-depth, refusing the write if the loaded
+   *      row's `tenantId` no longer matches the active context.
+   */
+  async update(id: string, partial: Partial<Merchant>): Promise<Merchant> {
+    const ability = await this.abilityFactory.build();
+    const repo = this.dataSource.getRepository(Merchant);
+
+    const merchant = await repo.findOne({
+      where: { id, tenantId: this.tenantContext.tenantId },
+    });
+    if (!merchant) throw new NotFoundException(`Merchant ${id} not found.`);
+
+    if (!ability.can('update', { ...merchant, __caslSubjectType__: 'Merchant' } as never)) {
+      throw new NotFoundException(`Merchant ${id} not found.`);
+    }
+
+    Object.assign(merchant, partial);
+    return repo.save(merchant);
+  }
+
+  /**
+   * Hard-delete a merchant. Same gating pattern as `update`. Soft
+   * delete is intentionally not modeled here — see the roadmap for
+   * the slice that introduces `@DeleteDateColumn` and verifies its
+   * interaction with `accessibleBy()`.
+   */
+  async remove(id: string): Promise<void> {
+    const ability = await this.abilityFactory.build();
+    const repo = this.dataSource.getRepository(Merchant);
+
+    const merchant = await repo.findOne({
+      where: { id, tenantId: this.tenantContext.tenantId },
+    });
+    if (!merchant) throw new NotFoundException(`Merchant ${id} not found.`);
+
+    if (!ability.can('delete', { ...merchant, __caslSubjectType__: 'Merchant' } as never)) {
+      throw new NotFoundException(`Merchant ${id} not found.`);
+    }
+
+    await repo.remove(merchant);
+  }
+
   async findOne(id: string): Promise<Merchant> {
     const ability = await this.abilityFactory.build();
     const repo = this.dataSource.getRepository(Merchant);

@@ -1,8 +1,22 @@
-import { Controller, Get, Inject, Param } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  HttpCode,
+  Inject,
+  Param,
+  Patch,
+} from '@nestjs/common';
 import { CheckPolicies } from 'nest-warden/nestjs';
 import { MerchantsService } from './merchants.service.js';
 import type { AppAbility } from '../auth/permissions.js';
-import type { Merchant } from '../entities/merchant.entity.js';
+import type { Merchant, MerchantStatus } from '../entities/merchant.entity.js';
+
+interface UpdateMerchantBody {
+  readonly status?: MerchantStatus;
+  readonly name?: string;
+}
 
 /**
  * Merchant endpoints. Both routes are policy-gated:
@@ -41,5 +55,21 @@ export class MerchantsController {
   @Get(':id')
   async get(@Param('id') id: string): Promise<Merchant> {
     return this.merchants.findOne(id);
+  }
+
+  @CheckPolicies((ability: AppAbility) => ability.can('update', 'Merchant'))
+  @Patch(':id')
+  async patch(
+    @Param('id') id: string,
+    @Body() body: UpdateMerchantBody,
+  ): Promise<Merchant> {
+    return this.merchants.update(id, body);
+  }
+
+  @CheckPolicies((ability: AppAbility) => ability.can('delete', 'Merchant'))
+  @HttpCode(204)
+  @Delete(':id')
+  async remove(@Param('id') id: string): Promise<void> {
+    return this.merchants.remove(id);
   }
 }
