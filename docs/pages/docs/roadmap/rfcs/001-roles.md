@@ -4,14 +4,16 @@ title: 'RFC 001: Roles abstraction on top of PBAC'
 
 | | |
 |---|---|
-| **Status** | Draft — proposed for v0.2.0 |
+| **Status** | Accepted — targeting v0.2.0 |
 | **Author** | nest-warden maintainers |
 | **Started** | 2026-05-08 |
+| **Resolved** | 2026-05-08 |
 | **Targets** | Theme 1 of the [roadmap](/docs/roadmap/things-to-do/) |
 
-This is a request for comments. The proposal here is opinionated but
-reversible — comments below the "Open questions" section gate
-acceptance. RFCs land before code.
+All six open questions resolved on the originating PR. The
+recommendations stood as written; resolutions are inlined in the
+"Open questions" section below. Phase A (core registry types) is
+unblocked.
 
 ## Summary
 
@@ -340,10 +342,11 @@ plus `loadCustomRoles` wiring will be added alongside the
 implementation work, but the library itself stays storage-agnostic
 per the existing project posture.
 
-## Open questions
+## Open questions — resolved
 
-These are the decisions that block "Draft" → "Accepted." Comments
-welcome on the tracking issue (link will live here once filed).
+All six questions were resolved on the originating PR. Each
+"Recommended" stands as **Resolved**. The text below is preserved
+for context; the resolution lines are the binding decisions.
 
 ### Q1 — Permission name format
 
@@ -359,7 +362,9 @@ welcome on the tracking issue (link will live here once filed).
 permission sets, and is unambiguously parseable. Dot-delimited
 collides with property paths in some UIs.
 
-**Recommended:** colon-delimited (`'merchants:read'`).
+**Resolved:** Colon-delimited (`'merchants:read'`). The `:` separator
+is reserved within permission names; subjects and actions cannot
+contain it.
 
 ### Q2 — Are conditions and field arrays per-permission, or per-role?
 
@@ -383,7 +388,10 @@ attachment approach lets one role tighten a permission for a
 specific assignment, which is rarely useful and creates audit
 ambiguity.
 
-**Recommended:** per-permission, no per-attachment overrides.
+**Resolved:** Per-permission, no per-attachment overrides. If a
+role needs a stricter variant of an existing permission, define a
+second permission (e.g., `merchants:approve-na-only`) and reference
+the appropriate one.
 
 ### Q3 — Where does `crossTenant` live?
 
@@ -392,9 +400,11 @@ type roles) needs to opt in. The proposal puts the flag on the
 permission itself. Alternative: opt-in only when the role is
 assigned to a specific user.
 
-**Recommended:** on the permission. A permission either is or isn't
+**Resolved:** On the permission. A permission either is or isn't
 cross-tenant in spirit; that's a property of the action, not the
-assignment.
+assignment. `crossTenant: true` permissions still require the
+caller's role to be assigned at all — it's an opt-out from the
+auto-injected tenant predicate, not from authorization.
 
 ### Q4 — Do system roles compose with custom roles, or replace?
 
@@ -406,8 +416,11 @@ what happens?
 - **Reject**: throw on name collision at module bootstrap (for
   system roles) and at custom role load (for custom).
 
-**Recommended:** Reject collisions. System role names are reserved.
-Custom roles must use distinct names. Avoids ambiguity entirely.
+**Resolved:** Reject collisions. System role names are reserved.
+Custom roles whose `name` collides with a system role throw
+`SystemRoleCollisionError` from `loadCustomRoles`'s validation pass,
+and the request fails closed (the role set for that request becomes
+empty). Avoids ambiguity entirely.
 
 ### Q5 — How are custom roles cached?
 
@@ -420,9 +433,13 @@ many users, that's potentially many DB reads per second.
 - Per-request memoization: each request calls once even if multiple
   rule rebuilds happen.
 
-**Recommended:** Per-request memoization (inside the library). For
-cross-request caching, document the pattern and let consumers ship
-their own (the same way they handle DB connections, JWTs, etc.).
+**Resolved:** Per-request memoization inside the library. The
+library guarantees `loadCustomRoles` is invoked at most once per
+request, even if the rule set is rebuilt mid-request. Cross-request
+caching is the consumer's responsibility — same model as how
+consumers manage DB connections, JWT verification keys, etc. The
+docs will publish a recipe for Redis-backed caching as part of
+Phase E.
 
 ### Q6 — Audit log integration
 
@@ -434,10 +451,14 @@ which lands separately. The role API should be designed so that the
 audit hook (when added) can attribute decisions back to a specific
 role-permission pair without re-engineering.
 
-**Constraint:** the rules emitted by `applyRoles` carry hidden
-metadata (role name, permission name) that the future decision
-logger can read. CASL rules already support a `reason` string field;
-we'll use that, structured as JSON.
+**Resolved:** Defer the audit hook itself to Theme 5. The role API
+will reserve CASL's `reason` field on every rule emitted by
+`applyRoles` — populated with a structured JSON string carrying
+`{ role, permission }`. When Theme 5's decision logger lands, it
+can parse the field and attribute decisions to a specific
+role-permission pair without re-engineering. Rules that bypass the
+role registry (raw `builder.can(...)` calls in `defineAbilities`)
+get an empty `reason` and surface as "unattributed" in the logger.
 
 ## Implementation phasing
 
@@ -466,17 +487,19 @@ Once accepted, work splits into thin slices, each its own PR:
 Each phase is its own PR; no phase merges before the previous one
 unless explicitly noted.
 
-## What "accepted" looks like
+## Acceptance record
 
-This RFC moves to **Accepted** when:
+The three preconditions for moving to **Accepted** are all
+satisfied:
 
-- The five open questions above are resolved (with rationale
-  captured here, replacing "Recommended").
-- A maintainer-tagged comment signs off.
-- A tracking issue is filed for Phase A.
+- ✅ Open questions Q1–Q6 resolved on the originating PR. Each
+  resolution is inlined above.
+- ✅ Maintainer sign-off recorded on the PR.
+- ⏳ Tracking issue for Phase A: filed alongside this RFC's merge
+  (link will live here when filed).
 
-Until then it's **Draft**. Code that references the API in this
-document should not land — the API may shift in response to comments.
+Phase A may begin once the tracking issue is open. The API surface
+described above is the contract; subsequent phases implement it.
 
 ## See also
 
