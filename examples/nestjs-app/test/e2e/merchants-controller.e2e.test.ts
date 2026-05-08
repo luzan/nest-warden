@@ -149,6 +149,44 @@ describe('GET /merchants — multi-tenant access control', () => {
     });
   });
 
+  describe('multi-role merge: composing rules from multiple roles', () => {
+    // CASL composes rules across roles by union. The two assertions
+    // below pin down both halves of that contract:
+    //
+    //   1. The broader rule wins for a given action/subject. Bob is an
+    //      `agent` (sees only assigned merchants via $relatedTo) and a
+    //      `merchant-approver` (reads everything in tenant). With both
+    //      roles he sees ALL ACME merchants — the approver's
+    //      unconditional read subsumes the agent's relationship-scoped
+    //      read in the union.
+    //
+    //   2. Conditions stay attached to their originating rule. The
+    //      same Bob, listing approvable merchants, gets only the
+    //      pending one — the agent role contributes no `approve`
+    //      rule, so the approver's `{ status: 'pending' }` predicate
+    //      is what runs.
+
+    it('a user with [agent, merchant-approver] sees all merchants in their tenant', async () => {
+      const res = await request(app.getHttpServer())
+        .get('/merchants')
+        .set(fakeAuth(AGENT_BOB, TENANT_ACME, ['agent', 'merchant-approver']));
+
+      expect(res.status).toBe(200);
+      const ids = (res.body as { id: string }[]).map((r) => r.id);
+      expect(ids).toHaveLength(3); // m1, m2, m3 — agent's $relatedTo doesn't restrict
+    });
+
+    it('the same user listing approvable merchants gets only the pending one', async () => {
+      const res = await request(app.getHttpServer())
+        .get('/merchants/approvable')
+        .set(fakeAuth(AGENT_BOB, TENANT_ACME, ['agent', 'merchant-approver']));
+
+      expect(res.status).toBe(200);
+      const ids = (res.body as { id: string }[]).map((r) => r.id);
+      expect(ids).toEqual([MERCHANT_M2]);
+    });
+  });
+
   describe('forward check: GET /merchants/:id', () => {
     it('Alice can read m1 (assigned)', async () => {
       const res = await request(app.getHttpServer())
