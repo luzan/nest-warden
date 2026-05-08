@@ -61,4 +61,10 @@ export const sidebarSections: readonly SidebarSection[] = [
       { href: '/docs/api/overview', label: 'API Overview' },
     ],
   },
+  {
+    title: 'Roadmap',
+    links: [
+      { href: '/docs/roadmap/things-to-do', label: 'Things to do' },
+    ],
+  },
 ];
