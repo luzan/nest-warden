@@ -1,0 +1,18 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/luzan/nest-warden/security/advisories/new
+    about: |
+      Do NOT file a public issue for security vulnerabilities. Use GitHub's
+      private security advisory flow so a fix can ship before disclosure.
+  - name: Question or usage help
+    url: https://github.com/luzan/nest-warden/discussions
+    about: |
+      For "how do I…" or design questions, open a Discussion instead of
+      an Issue. Issues are reserved for confirmed bugs and feature
+      proposals.
+  - name: Documentation
+    url: https://luzan.github.io/nest-warden/
+    about: |
+      Read the docs first — most setup, integration, and conceptual
+      questions are answered there.

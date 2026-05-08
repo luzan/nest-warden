@@ -1,0 +1,190 @@
+name: Bug report
+description: Report a bug or unexpected behavior in nest-warden
+title: "[bug]: "
+labels: ["bug", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to file a bug report.
+
+        Before submitting, please confirm:
+
+        - You're on a recent version of nest-warden (`pnpm why nest-warden` or `npm ls nest-warden`).
+        - You've searched [existing issues](https://github.com/luzan/nest-warden/issues?q=is%3Aissue) for duplicates.
+        - **Do not include cardholder data, secrets, API keys, JWTs, or production tenant IDs in this report.** Use synthetic values in any code or logs you paste.
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: One or two sentences describing the bug.
+      placeholder: "accessibleBy() generates a query missing the tenant predicate when..."
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Affected area
+      description: Which subpath export is involved?
+      multiple: true
+      options:
+        - "core (nest-warden)"
+        - "nestjs (nest-warden/nestjs)"
+        - "typeorm (nest-warden/typeorm)"
+        - "docs site"
+        - "example app"
+        - "build / packaging"
+        - "types"
+        - "not sure"
+    validations:
+      required: true
+
+  - type: input
+    id: nest-warden-version
+    attributes:
+      label: nest-warden version
+      placeholder: "0.1.0-alpha"
+    validations:
+      required: true
+
+  - type: input
+    id: node-version
+    attributes:
+      label: Node.js version
+      description: Output of `node -v`.
+      placeholder: "v20.11.1"
+    validations:
+      required: true
+
+  - type: input
+    id: package-manager
+    attributes:
+      label: Package manager + version
+      description: e.g. `pnpm 11.0.0`, `npm 10.5.0`, `yarn 4.1.0`.
+      placeholder: "pnpm 11.0.0"
+    validations:
+      required: true
+
+  - type: textarea
+    id: peer-versions
+    attributes:
+      label: Peer dependency versions
+      description: Versions of relevant peers — leave blank if not applicable.
+      value: |
+        - @casl/ability:
+        - @nestjs/common:
+        - @nestjs/core:
+        - typeorm:
+        - reflect-metadata:
+      render: markdown
+    validations:
+      required: false
+
+  - type: dropdown
+    id: database
+    attributes:
+      label: Database
+      description: Only relevant if the bug touches the TypeORM adapter.
+      options:
+        - "PostgreSQL 16"
+        - "PostgreSQL 15"
+        - "PostgreSQL 14"
+        - "PostgreSQL (other version)"
+        - "SQLite (better-sqlite3) — for tests"
+        - "Other / not applicable"
+    validations:
+      required: false
+
+  - type: dropdown
+    id: rls
+    attributes:
+      label: Row-Level Security (RLS) enabled?
+      description: For Postgres only.
+      options:
+        - "Yes — using nest-warden's RLS interceptor"
+        - "Yes — custom RLS setup"
+        - "No"
+        - "Not applicable"
+    validations:
+      required: false
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Minimal reproduction
+      description: |
+        Paste a minimal code sample that reproduces the issue. Prefer a runnable snippet over prose.
+        If the repro is too large, link to a public repo or a Gist.
+        **Use synthetic tenant IDs, user IDs, and entity data.** Do not paste real customer data.
+      render: typescript
+      placeholder: |
+        import { TenantAbilityBuilder, createTenantAbility } from 'nest-warden';
+
+        const builder = new TenantAbilityBuilder(createTenantAbility, {
+          tenantId: '00000000-0000-0000-0000-000000000001',
+          subjectId: 'user-1',
+          roles: ['agent'],
+        });
+
+        builder.can('read', 'Merchant', { status: 'active' });
+        const ability = builder.build();
+
+        // Expected: ability.can('read', merchantInstance) === true
+        // Actual: throws CrossTenantViolationError
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      placeholder: "I expected the rule to validate and the ability to be built."
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: Include error messages and stack traces. Redact any tenant IDs, user IDs, or hostnames.
+      render: shell
+      placeholder: |
+        CrossTenantViolationError: rule 0 (action=read, subject=Merchant) is missing the tenantId predicate
+            at validateTenantRules (.../validate-rules.ts:42:11)
+            ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: generated-sql
+    attributes:
+      label: Generated SQL (if applicable)
+      description: |
+        For TypeORM adapter bugs, paste the SQL emitted by `accessibleBy()`.
+        Enable TypeORM's logging (`logging: ['query']`) and copy the relevant statement.
+        **Replace any real values in placeholders with synthetic ones before pasting.**
+      render: sql
+    validations:
+      required: false
+
+  - type: textarea
+    id: workarounds
+    attributes:
+      label: Workarounds tried
+      description: What have you already tried? Helps avoid suggesting things you've ruled out.
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: terms
+    attributes:
+      label: Pre-submission checklist
+      options:
+        - label: I have searched existing issues and confirmed this is not a duplicate.
+          required: true
+        - label: I have removed all real tenant IDs, user IDs, secrets, and customer data from the repro and logs.
+          required: true
+        - label: I am willing to submit a PR if guided to the fix.
+          required: false

@@ -1,0 +1,99 @@
+name: Feature request
+description: Suggest a new capability or enhancement for nest-warden
+title: "[feat]: "
+labels: ["enhancement", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for suggesting an improvement.
+
+        Before filing, please search [existing issues](https://github.com/luzan/nest-warden/issues?q=is%3Aissue)
+        and the [docs site](https://luzan.github.io/nest-warden/) — your idea may already
+        be on the roadmap or covered by an existing primitive.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: |
+        What are you trying to do that nest-warden doesn't currently support well?
+        Describe the use case, not the proposed solution.
+      placeholder: |
+        I have multi-tenant resources with hierarchical ownership (Tenant → ISO → Sub-ISO → Merchant)
+        and need to express "this user can read any Merchant under any Sub-ISO they manage" without
+        denormalizing four tenant_id columns.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: |
+        How would you like this to work? API sketch welcome — even pseudocode helps.
+      render: typescript
+      placeholder: |
+        builder.can('read', 'Merchant', {
+          $relatedTo: {
+            path: ['merchant_of_subiso', 'subiso_of_iso'],
+            where: { manager_id: ctx.subjectId },
+          },
+        });
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Other approaches you've evaluated, including stock CASL or workarounds in user-land.
+    validations:
+      required: false
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Affected area
+      multiple: true
+      options:
+        - "core (rule builder, tenant primitive)"
+        - "relationships ($relatedTo, graph DSL)"
+        - "typeorm (accessibleBy, compiler)"
+        - "nestjs (module, guard, decorators)"
+        - "RLS / Postgres integration"
+        - "docs"
+        - "tooling / DX"
+        - "other"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: breaking
+    attributes:
+      label: Is this a breaking change?
+      options:
+        - "No — purely additive"
+        - "Maybe — depends on implementation"
+        - "Yes — changes existing API surface"
+        - "Not sure"
+    validations:
+      required: true
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Links to related issues, prior art in other libraries, or screenshots.
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: terms
+    attributes:
+      label: Pre-submission checklist
+      options:
+        - label: I have searched existing issues and confirmed this is not a duplicate.
+          required: true
+        - label: I am willing to submit a PR if the maintainers agree on the design.
+          required: false
