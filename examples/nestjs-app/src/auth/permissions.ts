@@ -69,4 +69,21 @@ export function defineAbilities(
       },
     } as never);
   }
+
+  // -----------------------------------------------------------------
+  // Merchant approver: a tenant-scoped role demonstrating CONDITIONAL
+  // authorization. Read is unconditional within the tenant, but
+  // `approve` only matches merchants whose status is 'pending'. The
+  // condition flows through both forward checks (in-memory matcher)
+  // and reverse lookups (compiled to a SQL `WHERE status = 'pending'`
+  // by `accessibleBy()`).
+  // -----------------------------------------------------------------
+  if (ctx.roles.includes('merchant-approver')) {
+    builder.can('read', 'Merchant');
+    // Same `as never` cast as the $relatedTo rules — CASL's
+    // MongoQuery<never> doesn't accept scalar shorthand without
+    // bound field types. The runtime matcher and SQL compiler
+    // both interpret the condition correctly.
+    builder.can('approve', 'Merchant', { status: 'pending' } as never);
+  }
 }

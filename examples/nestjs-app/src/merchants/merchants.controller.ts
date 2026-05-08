@@ -27,6 +27,16 @@ export class MerchantsController {
     return this.merchants.findAll();
   }
 
+  // Conditional-authz demo. The route is gated on `approve Merchant`,
+  // and the rule that grants it carries `{ status: 'pending' }`. The
+  // emitted SQL filters by status — no rows of other statuses are
+  // returned even though they exist in the same tenant.
+  @CheckPolicies((ability: AppAbility) => ability.can('approve', 'Merchant'))
+  @Get('approvable')
+  async approvable(): Promise<Merchant[]> {
+    return this.merchants.findApprovable();
+  }
+
   @CheckPolicies((ability: AppAbility) => ability.can('read', 'Merchant'))
   @Get(':id')
   async get(@Param('id') id: string): Promise<Merchant> {
