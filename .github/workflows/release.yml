@@ -1,8 +1,11 @@
 name: Release
 
+# Manual trigger only — flip back to `push: { branches: [main] }`
+# when ready to publish via changesets. The workflow itself is fully
+# wired (changesets/action@v1 + NPM_TOKEN), it just won't fire on
+# push until this trigger is changed.
 on:
-  push:
-    branches: [main]
+  workflow_dispatch:
 
 concurrency:
   group: release-${{ github.ref }}
