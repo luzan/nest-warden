@@ -72,11 +72,18 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
+      # Bundle size budget. Measured on the packed tarball (what npm
+      # consumers actually download), not the dist directory (which
+      # includes ESM + CJS + .d.ts + source maps for three subpath
+      # exports and is ~5x larger uncompressed).
       - name: Bundle size assertion
         run: |
-          SIZE=$(du -sk dist | cut -f1)
-          echo "dist size: ${SIZE} KB"
+          pnpm pack --pack-destination /tmp/pack-out
+          TARBALL=$(ls /tmp/pack-out/*.tgz | head -1)
+          SIZE=$(du -sk "$TARBALL" | cut -f1)
+          echo "tarball: $TARBALL"
+          echo "size: ${SIZE} KB"
           if [ "$SIZE" -gt 200 ]; then
-            echo "::error::dist exceeds 200 KB budget"
+            echo "::error::published tarball exceeds 200 KB budget"
             exit 1
           fi
