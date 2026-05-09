@@ -1,0 +1,75 @@
+name: Deploy docs
+
+# Builds the Markdoc / Next.js docs site and publishes the static
+# export to GitHub Pages. Triggers on pushes to main that touch
+# `docs/**` or this workflow file. Manual `workflow_dispatch` runs
+# are allowed for one-off republishes.
+#
+# The custom domain is configured via `docs/public/CNAME` — Next.js's
+# static export copies anything in `public/` to `out/`, so the CNAME
+# lands at the artifact root where GitHub Pages reads it.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'docs/**'
+      - '.github/workflows/deploy-docs.yml'
+  workflow_dispatch:
+
+# GitHub Pages best practice: only one deploy in flight at a time.
+# Don't cancel an in-progress deploy when a new run starts — let it
+# finish so the published artifact stays consistent.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+jobs:
+  build:
+    name: Build docs site
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with: { version: 9 }
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+          cache-dependency-path: docs/pnpm-lock.yaml
+
+      # The docs site is its own pnpm workspace (NOT in the parent's
+      # workspace), so we install with --ignore-workspace and the
+      # workspace's own lockfile.
+      - name: Install docs deps
+        working-directory: docs
+        run: pnpm install --frozen-lockfile --ignore-workspace
+
+      - name: Build static site
+        working-directory: docs
+        env:
+          DOCS_STATIC_EXPORT: 'true'
+        run: pnpm build
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs/out
+
+  deploy:
+    name: Deploy to GitHub Pages
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
