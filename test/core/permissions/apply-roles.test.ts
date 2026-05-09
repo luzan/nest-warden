@@ -260,4 +260,56 @@ describe('TenantAbilityBuilder.applyRoles', () => {
 
     expect(publicPerm.fields).toEqual(originalFields);
   });
+
+  describe('custom roles (RFC 001 Phase C)', () => {
+    it('looks up role names in customRoles when not found in systemRoles', () => {
+      const b = new TenantAbilityBuilder<AppAbility, string>(createMongoAbility, ctx, {
+        permissions,
+        systemRoles,
+        customRoles: [{ name: 'tenant-auditor', permissions: ['merchants:read'] }],
+      });
+      b.applyRoles(['tenant-auditor']);
+      expect(b.rules).toHaveLength(1);
+
+      const rule = b.rules[0] as { reason?: string };
+      const parsed = JSON.parse(rule.reason!) as { role: string; permission: string };
+      expect(parsed.role).toBe('tenant-auditor');
+      expect(parsed.permission).toBe('merchants:read');
+    });
+
+    it('system roles take precedence over custom roles with the same name', () => {
+      const b = new TenantAbilityBuilder<AppAbility, string>(createMongoAbility, ctx, {
+        permissions,
+        systemRoles,
+        // 'admin' also exists in systemRoles with different permissions.
+        // The system role wins; the custom one is ignored.
+        customRoles: [{ name: 'admin', permissions: ['merchants:read-public'] }],
+      });
+      b.applyRoles(['admin']);
+      // System admin has [merchants:read, merchants:approve] = 2 rules,
+      // not the single read-public rule from the custom-role definition.
+      expect(b.rules).toHaveLength(2);
+    });
+
+    it('mixes system and custom roles in a single applyRoles call', () => {
+      const b = new TenantAbilityBuilder<AppAbility, string>(createMongoAbility, ctx, {
+        permissions,
+        systemRoles,
+        customRoles: [{ name: 'tenant-special', permissions: ['merchants:read-public'] }],
+      });
+      b.applyRoles(['developer', 'tenant-special']);
+      // developer (system) → 1 rule, tenant-special (custom) → 1 rule.
+      expect(b.rules).toHaveLength(2);
+    });
+
+    it('treats an empty customRoles list the same as undefined', () => {
+      const b = new TenantAbilityBuilder<AppAbility, string>(createMongoAbility, ctx, {
+        permissions,
+        systemRoles,
+        customRoles: [],
+      });
+      b.applyRoles(['admin']);
+      expect(b.rules).toHaveLength(2); // admin from systemRoles
+    });
+  });
 });

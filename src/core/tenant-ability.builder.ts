@@ -7,6 +7,7 @@ import {
 } from '@casl/ability';
 import { MultiTenantCaslError } from './errors.js';
 import {
+  type CustomRoleEntry,
   type PermissionRegistry,
   type RoleRegistry,
   validatePermissionReferences,
@@ -29,6 +30,21 @@ export interface TenantBuilderOptions {
   readonly permissions?: PermissionRegistry;
   /** System role registry used by `applyRoles`. Optional. */
   readonly systemRoles?: RoleRegistry;
+  /**
+   * Per-request tenant-scoped custom roles, typically loaded from
+   * the consumer's database via `loadCustomRoles` in the NestJS
+   * module options. The builder consumes them the same way it
+   * consumes `systemRoles`: `applyRoles(roleNames)` looks up each
+   * name in `systemRoles` first, then in this array. Names not
+   * found in either are silently dropped.
+   *
+   * RFC 001 Phase C — the validation responsibility (collision with
+   * system role names, unknown permission references) belongs to
+   * the caller that produces this array. The builder trusts whatever
+   * is passed in. The factory at `nest-warden/nestjs` runs the
+   * validators and fails closed when they throw.
+   */
+  readonly customRoles?: readonly CustomRoleEntry[];
 }
 
 /**
@@ -59,7 +75,7 @@ export class TenantAbilityBuilder<
 > extends AbilityBuilder<TAbility> {
   private readonly _ctx: TenantContext<TId>;
   private readonly _opts: Required<Pick<TenantBuilderOptions, 'tenantField' | 'validateRules'>> &
-    Pick<TenantBuilderOptions, 'permissions' | 'systemRoles'>;
+    Pick<TenantBuilderOptions, 'permissions' | 'systemRoles' | 'customRoles'>;
 
   /**
    * Cross-tenant opt-out. Rules added via `crossTenant.can` / `cannot` skip
@@ -83,6 +99,7 @@ export class TenantAbilityBuilder<
       validateRules: options.validateRules ?? true,
       permissions: options.permissions,
       systemRoles: options.systemRoles,
+      customRoles: options.customRoles,
     };
 
     // CASL's AbilityBuilder assigns `can`/`cannot` as instance properties in
@@ -202,8 +219,21 @@ export class TenantAbilityBuilder<
       );
     }
 
+    // Custom roles loaded per-request via the factory's `loadCustomRoles`
+    // hook. Indexed once per applyRoles invocation, not per role-name
+    // lookup, since role lists are typically short and the array
+    // typically small.
+    const customRolesByName: ReadonlyMap<string, { permissions: readonly string[] }> = new Map(
+      (this._opts.customRoles ?? []).map((r) => [r.name, { permissions: r.permissions }]),
+    );
+
     for (const roleName of roleNames) {
-      const role = systemRoles[roleName];
+      // System roles take precedence by name. The factory's validation
+      // step rejects custom roles whose names collide with system
+      // roles, so a well-formed setup never has both — but if
+      // somehow both exist (e.g., consumer bypassed the factory), the
+      // system role wins.
+      const role = systemRoles[roleName] ?? customRolesByName.get(roleName);
       // Forward-compat: unknown role names are silently dropped so
       // adding a new role to the registry doesn't require coordinating
       // JWTs across all live sessions. RFC 001 § Q4 commentary.

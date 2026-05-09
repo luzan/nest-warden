@@ -3,7 +3,11 @@ import type { AbilityClass, AnyAbility, CreateAbility } from '@casl/ability';
 import type { TenantContext } from '../core/tenant-context.js';
 import type { TenantAbilityBuilder } from '../core/tenant-ability.builder.js';
 import type { TenantIdValue } from '../core/tenant-id.js';
-import type { PermissionRegistry, RoleRegistry } from '../core/permissions/index.js';
+import type {
+  CustomRoleEntry,
+  PermissionRegistry,
+  RoleRegistry,
+} from '../core/permissions/index.js';
 import type { RelationshipGraph } from '../core/relationships/graph.js';
 
 /**
@@ -91,6 +95,45 @@ export interface TenantAbilityModuleOptions<
    * `defineAbilities`; both styles can appear in the same callback.
    */
   readonly systemRoles?: RoleRegistry;
+
+  /**
+   * Tenant-managed custom roles loaded once per request. RFC 001
+   * Phase C — the bridge for non-technical tenant admins to compose
+   * permissions through a UI without redeploying the application.
+   *
+   * The callback runs after `resolveTenantContext` and before
+   * `defineAbilities`. The library memoizes the result per request,
+   * so calling `applyRoles` multiple times in `defineAbilities`
+   * doesn't re-fire the callback.
+   *
+   * Validation is fail-closed:
+   *
+   *   - Custom roles whose `name` collides with a system role are
+   *     silently dropped from the request's role set (the system
+   *     role takes precedence). The library logs the collision via
+   *     `console.warn` so it's visible in CI / staging.
+   *   - Custom roles referencing unknown permissions are silently
+   *     dropped from the request's role set.
+   *
+   * Cross-request caching is the consumer's responsibility — wrap
+   * the callback with Redis or whatever fits your latency budget.
+   *
+   * @example
+   *   loadCustomRoles: async (tenantId, ctx) => {
+   *     const rows = await this.customRolesRepo.find({
+   *       where: { tenantId },
+   *     });
+   *     return rows.map((r) => ({
+   *       name: r.name,
+   *       permissions: r.permissions,
+   *       description: r.description,
+   *     }));
+   *   }
+   */
+  readonly loadCustomRoles?: (
+    tenantId: TId,
+    context: TenantContext<TId>,
+  ) => readonly CustomRoleEntry[] | Promise<readonly CustomRoleEntry[]>;
 
   /**
    * Run `validateTenantRules` at `.build()` time. Default: `true`. Setting
