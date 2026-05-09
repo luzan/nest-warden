@@ -121,6 +121,41 @@ export class DuplicateRelationshipError extends MultiTenantCaslError {
   }
 }
 
+/**
+ * Thrown when a role references a permission name that does not exist
+ * in the permission registry. See RFC 001 (Roles abstraction) for the
+ * registry contract — permission references are validated at module
+ * bootstrap and at every `loadCustomRoles` invocation.
+ */
+export class UnknownPermissionError extends MultiTenantCaslError {
+  constructor(
+    public readonly roleName: string,
+    public readonly permission: string,
+  ) {
+    super(
+      `Role "${roleName}" references unknown permission "${permission}". ` +
+        `Add it to the permission registry via definePermissions(), or ` +
+        `correct the spelling on the role.`,
+    );
+  }
+}
+
+/**
+ * Thrown when a custom role's name collides with a system role of the
+ * same name. System role names are reserved (RFC 001 § Q4); the request
+ * fails closed with an empty role set if a `loadCustomRoles` callback
+ * returns a colliding entry.
+ */
+export class SystemRoleCollisionError extends MultiTenantCaslError {
+  constructor(public readonly roleName: string) {
+    super(
+      `Custom role "${roleName}" collides with a system role of the same ` +
+        `name. System role names are reserved and cannot be redefined ` +
+        `per-tenant. Rename the custom role.`,
+    );
+  }
+}
+
 function stringifyActionOrSubject(
   value: string | readonly string[] | undefined,
 ): string | undefined {
