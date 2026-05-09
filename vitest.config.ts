@@ -20,6 +20,7 @@ export default defineConfig({
         'src/**/*.d.ts',
         'src/core/tenant-context.ts', // interface-only
         'src/core/relationships/definition.ts', // interface-only
+        'src/core/permissions/types.ts', // interface-only
         'src/nestjs/options.ts', // interface-only
         'src/nestjs/tokens.ts', // const-only (Symbol declarations)
       ],

@@ -12,3 +12,4 @@ export * from './tenant-ability.builder.js';
 export * from './validate-rules.js';
 export * from './matcher.js';
 export * from './relationships/index.js';
+export * from './permissions/index.js';
