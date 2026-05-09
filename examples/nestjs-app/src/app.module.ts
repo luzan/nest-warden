@@ -5,6 +5,7 @@ import { TenantAbilityModule } from 'nest-warden/nestjs';
 import type { ForbiddenException } from '@nestjs/common';
 import { FakeAuthGuard } from './auth/fake-auth.guard.js';
 import { defineAbilities, type AppAbility } from './auth/permissions.js';
+import { permissions, systemRoles } from './auth/permission-registry.js';
 import { Tenant } from './entities/tenant.entity.js';
 import { Merchant } from './entities/merchant.entity.js';
 import { Agent } from './entities/agent.entity.js';
@@ -29,6 +30,12 @@ void (null as unknown as ForbiddenException); // type-only retain
     TenantAbilityModule.forRoot<AppAbility>({
       tenantField: 'tenantId',
       graph: relationshipGraph,
+      // RFC 001 Phase B — pass the registry so `defineAbilities` can
+      // call `builder.applyRoles(...)`. The registry covers the
+      // simple value-condition roles; complex $relatedTo rules still
+      // live as raw `builder.can(...)` calls inside the callback.
+      permissions,
+      systemRoles,
       // For the example, the request comes pre-authenticated by FakeAuthGuard
       // which sets request.user. In production, replace with a JWT lookup
       // that hits a `tenant_memberships` table to verify the claim.

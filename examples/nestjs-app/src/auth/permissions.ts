@@ -78,14 +78,22 @@ export function defineAbilities(
   // and reverse lookups (compiled to a SQL `WHERE status = 'pending'`
   // by `accessibleBy()`).
   // -----------------------------------------------------------------
-  if (ctx.roles.includes('merchant-approver')) {
-    builder.can('read', 'Merchant');
-    // Same `as never` cast as the $relatedTo rules — CASL's
-    // MongoQuery<never> doesn't accept scalar shorthand without
-    // bound field types. The runtime matcher and SQL compiler
-    // both interpret the condition correctly.
-    builder.can('approve', 'Merchant', { status: 'pending' } as never);
-  }
+  // -----------------------------------------------------------------
+  // Merchant approver — registry-based (RFC 001 Phase B).
+  //
+  // Defined in `permission-registry.ts` as
+  //   'merchants:read'             → can read Merchant
+  //   'merchants:approve-pending'  → can approve Merchant where
+  //                                  status='pending'
+  // and bundled into the `merchant-approver` system role.
+  //
+  // `applyRoles` walks `ctx.roles`, expands each into rules, attaches
+  // a `reason` field to every emitted rule for future audit-log
+  // attribution. Unknown role names are silently dropped, so this
+  // call is safe to invoke with the full role list — the other roles
+  // (handled below as raw `builder.can` calls) won't conflict.
+  // -----------------------------------------------------------------
+  builder.applyRoles(ctx.roles);
 
   // -----------------------------------------------------------------
   // Cautious approver: demonstrates NEGATIVE authorization. Same

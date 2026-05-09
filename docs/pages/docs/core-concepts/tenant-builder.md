@@ -115,6 +115,9 @@ class TenantAbilityBuilder<TAbility, TId extends TenantIdValue = string>
     cannot: AbilityBuilder['cannot'];
   };
 
+  // Expand named roles from the registry into rules (RFC 001 Phase B)
+  applyRoles(roleNames: readonly string[]): void;
+
   // Build with validation (throws on missing tenant predicate)
   build(options?: AbilityOptions): TAbility;
 
@@ -123,6 +126,69 @@ class TenantAbilityBuilder<TAbility, TId extends TenantIdValue = string>
   get tenantContext(): TenantContext<TId>;
 }
 ```
+
+## Role-based expansion: `applyRoles`
+
+For applications that want to manage permissions through named
+roles (rather than hand-rolled `if (ctx.roles.includes(...))`
+branches), the builder exposes `applyRoles(roleNames)`. The method
+expands a list of role names into rules using the permission and
+role registries provided in the builder options.
+
+```ts
+import { definePermissions, defineRoles } from 'nest-warden';
+
+const permissions = definePermissions<AppAction, AppSubject>({
+  'merchants:read':            { action: 'read',    subject: 'Merchant' },
+  'merchants:approve-pending': {
+    action: 'approve',
+    subject: 'Merchant',
+    conditions: { status: 'pending' },
+  },
+});
+
+const systemRoles = defineRoles<keyof typeof permissions>({
+  admin:    { permissions: ['merchants:read', 'merchants:approve-pending'] },
+  reviewer: { permissions: ['merchants:approve-pending'] },
+});
+
+// Inside defineAbilities:
+const builder = new TenantAbilityBuilder(createMongoAbility, ctx, {
+  permissions,
+  systemRoles,
+});
+builder.applyRoles(ctx.roles);          // expand named roles to rules
+builder.can('manage', 'AuditLog');      // ad-hoc rules still work
+const ability = builder.build();
+```
+
+Behavior contracts (per RFC 001):
+
+- **Unknown role names are silently dropped.** Adding a new role
+  to the registry doesn't require coordinating JWTs across all
+  live sessions; rolling back a role removal doesn't break old
+  tokens that still mention the removed name.
+- **Unknown permission references throw `UnknownPermissionError`.**
+  Unlike unknown role names, an unknown *permission* is a
+  programming error in the registry itself — not a runtime
+  state mismatch. Surface it loudly.
+- **Conditions are cloned** before being handed to CASL, so the
+  per-request mutation that injects the tenant predicate doesn't
+  pollute the registry's source-of-truth across requests or
+  tenants.
+- **Every emitted rule carries a `reason`** field with the JSON
+  string `{ "role": <name>, "permission": <name> }`. A future
+  decision logger can attribute decisions back to the originating
+  role-permission pair without re-engineering — no change to
+  `applyRoles` will be needed when that lands.
+- **Coexists with ad-hoc rules.** `applyRoles` is additive. Any
+  combination of `applyRoles`, `builder.can`, and
+  `builder.crossTenant.can` calls in the same `defineAbilities`
+  callback compose normally.
+
+For the full design rationale and the open questions that were
+resolved before this landed, see
+[RFC 001](/docs/roadmap/rfcs/001-roles/).
 
 ## See also
 

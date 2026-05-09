@@ -5,6 +5,7 @@ import { TenantAbilityFactory } from '../../src/nestjs/tenant-ability.factory.js
 import { TenantContextService } from '../../src/nestjs/tenant-context.service.js';
 import type { TenantAbilityModuleOptions } from '../../src/nestjs/options.js';
 import type { TenantContext } from '../../src/core/tenant-context.js';
+import { definePermissions, defineRoles } from '../../src/core/permissions/index.js';
 
 type AppAbility = MongoAbility;
 const ctx: TenantContext<string> = { tenantId: 't1', subjectId: 'u1', roles: ['agent'] };
@@ -104,5 +105,28 @@ describe('TenantAbilityFactory', () => {
     svc.set(ctx);
     const ability = await factory.build();
     expect(ability.can('read', 'Merchant')).toBe(true);
+  });
+
+  it('forwards permissions and systemRoles to the builder so applyRoles works', async () => {
+    const permissions = definePermissions({
+      'merchants:read': { action: 'read', subject: 'Merchant' },
+    });
+    const systemRoles = defineRoles<keyof typeof permissions>({
+      reader: { permissions: ['merchants:read'] },
+    });
+
+    const { factory, svc } = build({
+      resolveTenantContext: () => ctx,
+      permissions,
+      systemRoles,
+      defineAbilities: (builder, c) => {
+        builder.applyRoles(c.roles.includes('reader') ? ['reader'] : []);
+      },
+    });
+    svc.set({ ...ctx, roles: ['reader'] });
+
+    const ability = await factory.build();
+    expect(ability.can('read', 'Merchant')).toBe(true);
+    expect(ability.can('approve', 'Merchant')).toBe(false);
   });
 });

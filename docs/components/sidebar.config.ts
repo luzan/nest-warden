@@ -18,6 +18,7 @@ export const sidebarSections: readonly SidebarSection[] = [
     links: [
       { href: '/docs/get-started/introduction', label: 'Introduction' },
       { href: '/docs/get-started/why', label: 'Why nest-warden?' },
+      { href: '/docs/get-started/when-to-use', label: 'When (not) to use' },
       { href: '/docs/get-started/installation', label: 'Installation' },
       { href: '/docs/get-started/faq', label: 'FAQ' },
     ],
