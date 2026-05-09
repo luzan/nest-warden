@@ -90,6 +90,18 @@ export async function seedFixture(dataSource: DataSource): Promise<void> {
         TENANT_BETA, MERCHANT_M4,
       ],
     );
+
+    // Seed one tenant-managed custom role for ACME (RFC 001 Phase C).
+    // Demonstrates the `loadCustomRoles` flow end-to-end: a non-
+    // technical tenant admin would create this row through a UI in a
+    // real product; the test uses raw SQL because the example doesn't
+    // ship a custom-role management endpoint.
+    await runner.query(
+      `INSERT INTO custom_roles(tenant_id, name, description, permissions) VALUES
+       ($1, 'tenant-auditor', 'Read-only access for QA reviewers',
+        '["merchants:read"]'::jsonb)`,
+      [TENANT_ACME],
+    );
   } finally {
     await runner.release();
   }

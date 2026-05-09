@@ -58,6 +58,22 @@ CREATE TABLE IF NOT EXISTS agent_merchant_assignments (
   PRIMARY KEY (agent_id, merchant_id)
 );
 
+-- Custom roles: tenant-managed roles loaded at request time via the
+-- `loadCustomRoles` callback (RFC 001 Phase C). Each row references
+-- a permission name that must exist in the application's permission
+-- registry; the library validates references at request time and
+-- silently drops any role with unknown references (logging a warning
+-- so misconfiguration is visible).
+CREATE TABLE IF NOT EXISTS custom_roles (
+  id          uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id   uuid        NOT NULL REFERENCES tenants(id),
+  name        text        NOT NULL,
+  description text,
+  permissions jsonb       NOT NULL DEFAULT '[]'::jsonb,
+  created_at  timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (tenant_id, name)
+);
+
 -- Payments: tenant-scoped, foreign-keyed to merchants. Demonstrates
 -- multi-hop reverse lookups (Payment → Merchant → Agent).
 CREATE TABLE IF NOT EXISTS payments (
@@ -117,6 +133,14 @@ ALTER TABLE payments ENABLE ROW LEVEL SECURITY;
 ALTER TABLE payments FORCE ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation ON payments
   USING (tenant_id::text = current_setting('app.current_tenant_id', true));
+
+-- `custom_roles` is intentionally NOT under RLS. The
+-- `loadCustomRoles` callback runs BEFORE the per-request session
+-- variable is set (it has to — the tenant context is what determines
+-- which roles to load). Defense-in-depth here is the explicit
+-- `WHERE tenant_id = $1` in the consumer's query; misuse of the
+-- callback would surface immediately as a missing tenant filter,
+-- not as a silent leak.
 
 -- The `tenants` table itself is intentionally unrestricted — every
 -- authenticated user can look up their own tenant's metadata. Sensitive

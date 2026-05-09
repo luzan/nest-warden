@@ -7,6 +7,58 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **RFC 001 Phase A — typed permission/role registry primitives.**
+  `definePermissions<TAction, TSubject>` and `defineRoles<TPermission>`
+  return their input map unchanged at runtime; the value is in the
+  typing — `const`-modifier preserves literal-typed keys so consumers
+  derive `Permission = keyof typeof permissions` for autocomplete +
+  compile-time checks. Plus `validatePermissionReferences` and
+  `assertNoSystemRoleCollision` runtime validators, and the
+  `UnknownPermissionError` / `SystemRoleCollisionError` error classes.
+
+- **RFC 001 Phase B — `TenantAbilityBuilder.applyRoles(roleNames)`.**
+  Expands named roles into rules using the registries from Phase A.
+  System-role lookups silently drop unknown names (forward compat
+  for live-session JWTs); permission-reference validation throws
+  `UnknownPermissionError` on misconfiguration. Every emitted rule
+  carries a `reason` field with `{ role, permission }` JSON for
+  future audit-log attribution (Theme 5). `TenantAbilityModule.forRoot`
+  gains `permissions` and `systemRoles` fields that thread through
+  the factory to the per-request builder.
+
+- **RFC 001 Phase C — `loadCustomRoles` for tenant-managed roles.**
+  Module options gain an optional async `loadCustomRoles(tenantId,
+  ctx)` callback; the factory invokes it once per request, validates
+  each returned role (collision with system roles → drop + warn;
+  unknown permission reference → drop + warn), and threads the
+  surviving custom roles into the per-request builder. `applyRoles`
+  resolves names against system roles first, then custom roles by
+  name. New `TenantAbilityModule.forRootAsync` mirrors NestJS's
+  conventional `useFactory + inject + imports` shape so the loader
+  can DI a repository (or any other data source).
+
+- **Documentation site** — Markdoc-powered docs at `docs/`. New
+  pages: "When (not) to use" (Get Started), "Security Best
+  Practices" (Advanced Concepts), "Roadmap" section with RFC 001 and
+  "Things to do." Mermaid support — fenced ` ```mermaid ` blocks
+  route to a client-only React component via `next/dynamic` so
+  static export keeps working. JWT trust-boundary diagram and the
+  custom-roles load-validate-apply pipeline rendered inline.
+
+- **Example app — registry pattern, custom roles, soft delete,
+  field projection, mutations, conditional & negative authz,
+  multi-role merge.** Theme 2 slices added to
+  `examples/nestjs-app/`: 14 → 31 E2E tests covering deeper
+  scenarios. New `custom_roles` table + `CustomRole` entity wire
+  the Phase C `loadCustomRoles` end-to-end.
+
+- **CI** — separate workflow for docs deployment to GitHub Pages
+  (`actions/deploy-pages@v4`), `example-e2e` job runs the example
+  E2E against testcontainers Postgres, GitHub issue templates
+  (`bug_report.yml`, `feature_request.yml`, `config.yml`).
+
 ### Changed
 
 - **Renamed package from `multi-tenant-casl` to `nest-warden`** ahead of
@@ -15,6 +67,53 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   rebrand from `multi-tenant-casl:*` to `nest-warden:*` (consumers of
   the public API don't see these). Repository home is
   https://github.com/luzan/nest-warden.
+
+- **CI now enforces 100% coverage.** The 100% line / branch / function
+  / statement thresholds in `vitest.config.ts` had been silently
+  unenforced because the workflow ran `pnpm test`. Switched to
+  `pnpm test:coverage` so future PRs that drift below 100% fail
+  the build.
+
+- **Bundle size budget measured on the packed tarball, not the dist
+  directory.** The earlier check ran `du -sk dist` which counted
+  ESM + CJS + `.d.ts` + source maps for three subpath exports
+  uncompressed (~5x the published tarball). The CI step now invokes
+  `pnpm pack` and asserts the resulting `.tgz` is under 200 KB —
+  i.e., what `npm install nest-warden` actually downloads.
+
+- **Source maps no longer ship in the published tarball** (saved
+  ~120 KB; tarball went from 212 KB to 88 KB). Source maps are
+  still generated under `dist/*.map` for local development — the
+  example app consumes the library via `file:../..` and benefits
+  when stepping through code — but excluded from the npm package
+  via a negation in `package.json` `files`. Stack traces from
+  bundled code are informative enough for production bug reports.
+
+### Fixed
+
+- **Cross-request registry mutation in `applyRoles`** — caught
+  during Phase C example-app integration. The per-rule conditions
+  object passed to CASL's `can()` was mutated in place by the
+  tenant-predicate injection wrapper. Because the registry's
+  `permission.conditions` was the same shared object across
+  requests, the previous request's `tenantId` leaked into the
+  next request's rule. Fixed by cloning conditions and fields at
+  the call site; regression test
+  (`does NOT mutate the registry across builder invocations`)
+  pins the behavior.
+
+- **Coverage gaps in `tenant-policies.guard.ts:87-90` and
+  `related-to.ts:157-163, 228-229`** — pre-existing uncovered ranges
+  that were slipping past CI because the unit-tests job didn't enforce
+  the 100% threshold. Backfilled with tests covering the guard's
+  lazy-resolve branch and the foreignKey-as-subsequent-hop / custom-
+  resolver-as-subsequent-hop / empty-where-clause branches in the
+  `$relatedTo` SQL emitter.
+
+- **`pnpm-workspace.yaml` files at root, `examples/nestjs-app/`,
+  and `docs/`** — added `packages: ['.']` to each. The previous files
+  carried only an `allowBuilds:` map and crashed `actions/setup-node@v4`'s
+  pnpm cache step (`pnpm store path` requires the field).
 
 ### Added
 

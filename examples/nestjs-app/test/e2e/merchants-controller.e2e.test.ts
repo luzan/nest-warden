@@ -151,6 +151,45 @@ describe('GET /merchants — multi-tenant access control', () => {
     });
   });
 
+  describe('custom roles loaded at request time (RFC 001 Phase C)', () => {
+    // The seed inserts ONE custom role into ACME's `custom_roles`
+    // table: `tenant-auditor` with permission `merchants:read`. The
+    // role is loaded by `loadCustomRoles` in app.module.ts and
+    // expanded by `builder.applyRoles(ctx.roles)` in
+    // permissions.ts the same way system roles are.
+
+    it('a user with the tenant-auditor custom role can list ACME merchants', async () => {
+      const res = await request(app.getHttpServer())
+        .get('/merchants')
+        .set(fakeAuth('any-user-id', TENANT_ACME, ['tenant-auditor']));
+
+      expect(res.status).toBe(200);
+      // tenant-auditor → permissions=['merchants:read'] → sees all
+      // ACME merchants the request can read (no $relatedTo, no
+      // status filter).
+      const ids = (res.body as { id: string }[]).map((r) => r.id);
+      expect(ids.length).toBeGreaterThanOrEqual(1);
+    });
+
+    it('the same role assigned in BETA does nothing — it was registered for ACME only', async () => {
+      // BETA's custom_roles table is empty; the loader returns []
+      // for BETA. A user with role name 'tenant-auditor' in BETA
+      // gets no rule expansion.
+      const res = await request(app.getHttpServer())
+        .get('/merchants')
+        .set(fakeAuth('any-user-id', TENANT_BETA, ['tenant-auditor']));
+
+      // Without any rules, the policy guard denies — 403 from guard
+      // OR a passing 200 with empty body if read happens to be
+      // allowed elsewhere. We assert the user gets nothing.
+      if (res.status === 200) {
+        expect(res.body as unknown[]).toEqual([]);
+      } else {
+        expect([403, 404]).toContain(res.status);
+      }
+    });
+  });
+
   describe('multi-role merge: composing rules from multiple roles', () => {
     // CASL composes rules across roles by union. The two assertions
     // below pin down both halves of that contract:

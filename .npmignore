@@ -17,3 +17,12 @@ vitest.config.ts
 vitest.integration.config.ts
 *.test.ts
 *.spec.ts
+
+# Source maps — generated for local development (the example app
+# consumes the library via `file:../..` and benefits when stepping
+# through code) but excluded from the published tarball. They're a
+# meaningful chunk of size and most consumers don't use them. Stack
+# traces still reference the bundled file path, which is enough for
+# bug reports.
+dist/**/*.map
+

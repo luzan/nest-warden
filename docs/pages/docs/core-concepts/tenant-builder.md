@@ -190,6 +190,70 @@ For the full design rationale and the open questions that were
 resolved before this landed, see
 [RFC 001](/docs/roadmap/rfcs/001-roles/).
 
+### Tenant-managed custom roles (Phase C)
+
+System roles cover the engineering team's needs. Most multi-tenant
+SaaS apps also need **tenant admins** to compose roles through a
+UI without redeploying the application. Configure a
+`loadCustomRoles` callback on `TenantAbilityModule.forRootAsync`
+and the library expands those roles the same way it expands system
+roles:
+
+```ts
+TenantAbilityModule.forRootAsync<AppAbility>({
+  imports: [TypeOrmModule.forFeature([CustomRole])],
+  inject: [getRepositoryToken(CustomRole)],
+  useFactory: (customRolesRepo: Repository<CustomRole>) => ({
+    permissions,
+    systemRoles,
+    resolveTenantContext: ...,
+    defineAbilities: (builder, ctx) => builder.applyRoles(ctx.roles),
+    loadCustomRoles: async (tenantId) => {
+      const rows = await customRolesRepo.find({ where: { tenantId } });
+      return rows.map((r) => ({
+        name: r.name,
+        permissions: r.permissions, // string[]
+        description: r.description ?? undefined,
+      }));
+    },
+  }),
+})
+```
+
+```mermaid
+flowchart TD
+  Req[HTTP request] --> Ctx[resolveTenantContext]
+  Ctx --> Load[loadCustomRoles tenantId, ctx]
+  Load --> DB[(custom_roles table)]
+  DB --> Validate[Validate name + permissions]
+  Validate --> Drop{Valid?}
+  Drop -- "no, drop + warn" --> SystemOnly[System roles only]
+  Drop -- "yes" --> Both[System roles + custom roles]
+  Both --> Apply[builder.applyRoles ctx.roles]
+  SystemOnly --> Apply
+  Apply --> Ability[Per-request Ability]
+  Ability --> Handler[Controller handler]
+```
+
+Validation is fail-closed by design:
+
+- **Name collision with a system role** → custom role is dropped,
+  system role wins, library logs `console.warn`. RFC § Q4.
+- **Permission reference not in the registry** → custom role is
+  dropped, library logs `console.warn`. The other roles for the
+  same request still apply.
+
+The motivation: a misconfigured row in the tenant's
+`custom_roles` table should not error out every request from
+that tenant. Surface the misconfiguration via logs and let the
+request continue with the surviving roles.
+
+The library memoizes the loader per request — calling
+`applyRoles` multiple times in the same `defineAbilities` does
+not re-fire the database query. Cross-request caching (Redis
+etc.) is the consumer's responsibility, the same way it is for
+JWT verification keys and DB connections.
+
 ## See also
 
 - [Tenant Context](/docs/core-concepts/tenant-context/) — what feeds the builder.
