@@ -1,4 +1,5 @@
-import type { ReactNode } from 'react';
+import dynamic from 'next/dynamic';
+import { Children, type ReactNode } from 'react';
 
 /**
  * Renders a fenced code block with the language tag and dark-theme
@@ -12,13 +13,37 @@ import type { ReactNode } from 'react';
  *
  * The `language` attribute is rendered as `data-language` for
  * downstream syntax-highlighter integrations.
+ *
+ * Special-case for `mermaid` — the content is forwarded to a
+ * client-only <Mermaid /> component that renders the diagram SVG.
+ * The mermaid library touches `document` at import time and would
+ * crash a static export; lazy-loading via `next/dynamic` with
+ * `ssr: false` keeps the build clean.
  */
 export interface CodeBlockProps {
   language?: string;
   children?: ReactNode;
 }
 
+const Mermaid = dynamic(() => import('./Mermaid'), {
+  ssr: false,
+  loading: () => <pre style={{ padding: '1rem' }}>Loading diagram…</pre>,
+});
+
+const collectText = (children: ReactNode): string => {
+  let out = '';
+  Children.forEach(children, (child) => {
+    if (typeof child === 'string') out += child;
+    else if (typeof child === 'number') out += String(child);
+  });
+  return out;
+};
+
 export function CodeBlock({ children, language }: CodeBlockProps): JSX.Element {
+  if (language === 'mermaid') {
+    const source = collectText(children).trim();
+    return <Mermaid source={source} />;
+  }
   return (
     <pre
       style={{

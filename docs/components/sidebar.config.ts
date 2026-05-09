@@ -48,6 +48,7 @@ export const sidebarSections: readonly SidebarSection[] = [
   {
     title: 'Advanced Concepts',
     links: [
+      { href: '/docs/advanced/security-best-practices', label: 'Security Best Practices' },
       { href: '/docs/advanced/custom-resolvers', label: 'Custom Relationship Resolvers' },
       { href: '/docs/advanced/multi-hop-design', label: 'Multi-hop Graph Design' },
       { href: '/docs/advanced/audit-logging', label: 'Audit Logging' },

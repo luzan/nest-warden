@@ -252,6 +252,67 @@ Concrete asks of the soak phase:
   variable across requests is the failure mode that's hardest
   to detect and worst to ship.
 
+### 7. Security hardening test plan
+
+**Problem.** The library enforces tenant safety at `.build()`,
+auto-injects predicates, parameterizes SQL, and pairs with RLS.
+What it cannot do is enforce the *contract* between consumer
+code and the trust boundary — JWT verification, server-side
+membership lookups, and the absence of cross-request state
+leakage in the registry. We caught one cross-request leak
+during Phase B integration testing (the registry's `conditions`
+object was being mutated in place); we want a systematic story
+that catches the next one before it reaches consumers.
+
+**Plan — six PRs of testing infrastructure.** Most are small
+(< 200 LOC); together they raise the floor of what a consumer
+gets out of the box.
+
+**A — Production-style JWT auth flow in the example.** Replace
+`FakeAuthGuard` with a real JWT verification path plus
+server-side membership lookup. Demonstrates the trust boundary
+end-to-end. The hardest thing for consumers to get right —
+doing it once, well, in the example saves dozens of consumers
+from the same mistake.
+
+**B — Multi-request invariant tests.** A test helper that
+snapshots the in-process registry / module state before a
+sequence of E2E requests and asserts byte-equality afterwards.
+Would have caught the cross-tenant leak fixed during Phase B.
+~50 LOC test helper.
+
+**C — Concurrent multi-tenant stress E2E.** Fire `N` parallel
+requests across `M` tenants with different roles. Assert each
+response only contains its own tenant's data. Catches
+state-sharing bugs that strictly-sequential tests miss. Adds
+runtime to CI but the value is high.
+
+**D — Property test pairing forward checks with reverse
+lookups.** For randomly generated rule shapes, assert
+`ability.can(action, instance)` and
+`accessibleBy(...).getMany()` agree on every entity in a fixture.
+Catches matcher / SQL-compiler divergence — the class of bug
+that's nearly impossible to find by hand because both halves
+look "obviously correct" in isolation.
+
+**E — Adversarial JWT scenarios in the example.** Once A lands:
+tampered claim → 403; expired token → 401; user with no
+membership in claimed tenant → 403. Tests in the example
+demonstrate the expected failure modes so consumers can copy
+them.
+
+**F — Lint rule for direct repository access.** ESLint rule
+that flags `dataSource.getRepository(...)` outside whitelisted
+files (admin / migration code paths). Forces consumers through
+`TenantAwareRepository` or `accessibleBy`. Defense against
+"accidentally bypass the auto-injected tenant predicate."
+
+**Priority order if we do these one at a time:** A → B → D →
+E → C → F. A is highest leverage (production-realistic example);
+B is cheapest insurance against the bug class we just hit; D
+catches a different class; E completes A; C is more expensive
+but valuable for teams running at scale; F is nice to have.
+
 ## Not on this roadmap
 
 Items that have been considered and deliberately deferred:
