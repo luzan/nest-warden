@@ -252,6 +252,84 @@ describe('$relatedTo — custom resolver', () => {
     expect(sql?.sql).toMatch(/= :mtc_\d+/); // bound param substituted
     expect(Object.values(sql!.params)).toContain('active');
   });
+
+  it('compiles a custom resolver as a SUBSEQUENT hop (isFirst=false branch)', () => {
+    // First hop is a foreignKey (correlates outer→subquery via WHERE);
+    // second hop is a custom resolver (joinClause path, isFirst=false).
+    // Exercises the `isFirst` ternary in buildCustomHop.
+    const graph = new RelationshipGraph()
+      .define({
+        name: 'merchant_of_payment',
+        from: 'Payment',
+        to: 'Merchant',
+        resolver: foreignKey({ fromColumn: 'merchant_id' }),
+      })
+      .define({
+        name: 'agent_via_audit_log',
+        from: 'Merchant',
+        to: 'Agent',
+        resolver: custom({
+          sql:
+            'INNER JOIN audit_log al ON al.merchant_id = {from_alias}.id ' +
+            'INNER JOIN agents {to_alias} ON {to_alias}.id = al.agent_id',
+        }),
+      });
+
+    const ability = createMongoAbility([
+      {
+        action: 'read',
+        subject: 'Payment',
+        conditions: {
+          tenantId: 't1',
+          $relatedTo: {
+            path: ['merchant_of_payment', 'agent_via_audit_log'],
+            where: { id: 'alice' },
+          },
+        },
+      },
+    ]);
+
+    const sql = buildAccessibleSql(ability, 'read', 'Payment', { alias: 'p', graph });
+    expect(sql?.sql).toContain('EXISTS (');
+    expect(sql?.sql).toContain('audit_log al');
+    // Custom hop SQL appears as a JOIN clause, not as a FROM clause.
+    expect(sql?.sql).not.toMatch(/FROM audit_log/);
+  });
+
+  it('emits no WHERE clause when correlations and leaf-where are both empty', () => {
+    // Single-hop custom resolver (no outerCorrelation) plus an empty
+    // leaf where → both whereParts arrays are empty. Exercises the
+    // false branch of the `whereParts.length > 0 ? ... : ''` ternary.
+    const graph = new RelationshipGraph().define({
+      name: 'agent_self',
+      from: 'Agent',
+      to: 'Agent',
+      resolver: custom({
+        sql:
+          'FROM agents {to_alias} WHERE EXISTS (' +
+          'SELECT 1 FROM agent_hierarchy WHERE ancestor_id = {from_alias}.id ' +
+          'AND descendant_id = {to_alias}.id)',
+      }),
+    });
+
+    const ability = createMongoAbility([
+      {
+        action: 'read',
+        subject: 'Agent',
+        conditions: {
+          tenantId: 't1',
+          $relatedTo: { path: ['agent_self'], where: {} },
+        },
+      },
+    ]);
+
+    const sql = buildAccessibleSql(ability, 'read', 'Agent', { alias: 'a', graph });
+    expect(sql?.sql).toContain('EXISTS (');
+    // The outer ` WHERE ...` between the FROM/JOIN section and the
+    // closing paren must be absent — the custom SQL still has its own
+    // internal WHERE inside the EXISTS, but no outer WHERE is emitted.
+    expect(sql?.sql).not.toMatch(/\) WHERE /);
+  });
 });
 
 describe('$relatedTo — leaf where with multiple fields', () => {
