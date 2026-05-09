@@ -223,6 +223,47 @@ describe('buildAccessibleSql — $relatedTo (with graph)', () => {
     expect(sql?.sql).toContain('agent_merchant_assignments');
   });
 
+  it('compiles a multi-hop $relatedTo where the SECOND hop is a foreign key', () => {
+    // Path: Payment → Merchant (foreignKey) → Tenant (foreignKey).
+    // First hop correlates with the outer alias via WHERE; second hop
+    // is a regular INNER JOIN inside the EXISTS subquery. This case
+    // exercises the subsequent-hop branch of buildForeignKeyHop.
+    const graph = new RelationshipGraph()
+      .define({
+        name: 'merchant_of_payment',
+        from: 'Payment',
+        to: 'Merchant',
+        resolver: foreignKey({ fromColumn: 'merchant_id' }),
+      })
+      .define({
+        name: 'tenant_of_merchant',
+        from: 'Merchant',
+        to: 'Tenant',
+        resolver: foreignKey({ fromColumn: 'tenant_id' }),
+      });
+
+    const ability = createMongoAbility([
+      {
+        action: 'read',
+        subject: 'Payment',
+        conditions: {
+          tenantId: 't1',
+          $relatedTo: {
+            path: ['merchant_of_payment', 'tenant_of_merchant'],
+            where: { id: 't1' },
+          },
+        },
+      },
+    ]);
+
+    const sql = buildAccessibleSql(ability, 'read', 'Payment', {
+      alias: 'p',
+      graph,
+    });
+    expect(sql?.sql).toContain('EXISTS (');
+    expect(sql?.sql).toMatch(/INNER JOIN tenants \w+ ON \w+\.tenant_id = \w+\.id/);
+  });
+
   it('throws when $relatedTo is used without a graph', () => {
     const ability = createMongoAbility([
       {

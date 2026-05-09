@@ -56,7 +56,11 @@ jobs:
           node-version: ${{ matrix.node }}
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm test
+      # Use `pnpm test:coverage` (not `pnpm test`) so the 100% line /
+      # branch / function / statement thresholds in vitest.config.ts
+      # are enforced on every PR. Plain `pnpm test` skips the
+      # threshold check and lets coverage drift in silently.
+      - run: pnpm test:coverage
 
   build:
     name: Build

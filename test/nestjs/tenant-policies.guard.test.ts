@@ -119,4 +119,41 @@ describe('TenantPoliciesGuard', () => {
 
     expect(await guard.canActivate(fakeExecCtx({ handler }))).toBe(true);
   });
+
+  it('lazy-resolves the tenant context when the interceptor has not run', async () => {
+    // Guards run BEFORE interceptors in NestJS, so the
+    // TenantContextInterceptor cannot have populated the service
+    // when @CheckPolicies routes hit the guard. The guard must call
+    // `resolveTenantContext` itself, set the context, and stamp the
+    // request — without that, the ability factory has no tenant to
+    // build against. See FINDINGS.md § 4.
+    let resolveCalls = 0;
+    const { guard, svc } = build({
+      resolveTenantContext: () => {
+        resolveCalls += 1;
+        return ctx;
+      },
+      defineAbilities: (builder) => {
+        builder.can('read', 'Merchant');
+      },
+    });
+
+    function handler(): void {}
+    Reflect.defineMetadata(
+      CHECK_POLICIES_KEY,
+      [(ability: AppAbility) => ability.can('read', 'Merchant')],
+      handler,
+    );
+
+    const request: { ability?: AppAbility; tenantContext?: unknown } = {};
+    expect(svc.has()).toBe(false);
+
+    expect(await guard.canActivate(fakeExecCtx({ handler, request }))).toBe(true);
+
+    expect(resolveCalls).toBe(1);
+    expect(svc.has()).toBe(true);
+    expect(svc.tenantId).toBe('t1');
+    expect(request.tenantContext).toEqual(ctx);
+    expect(request.ability).toBeDefined();
+  });
 });
