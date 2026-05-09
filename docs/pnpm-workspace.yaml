@@ -1,2 +1,8 @@
+packages:
+  - '.'
+
+# Native build approval (pnpm 11). Same shape as the root and example
+# workspaces — `packages: ['.']` is required for `pnpm store path`
+# (invoked by actions/setup-node's pnpm cache) to succeed.
 allowBuilds:
   unrs-resolver: true
