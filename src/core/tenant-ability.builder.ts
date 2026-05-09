@@ -5,6 +5,12 @@ import {
   type AnyAbility,
   type CreateAbility,
 } from '@casl/ability';
+import { MultiTenantCaslError } from './errors.js';
+import {
+  type PermissionRegistry,
+  type RoleRegistry,
+  validatePermissionReferences,
+} from './permissions/index.js';
 import { DEFAULT_TENANT_FIELD, type TenantIdValue } from './tenant-id.js';
 import type { TenantContext } from './tenant-context.js';
 import { markCrossTenant } from './tenant-rule.js';
@@ -15,6 +21,14 @@ export interface TenantBuilderOptions {
   readonly tenantField?: string;
   /** Run `validateTenantRules` at `.build()`. Default: `true`. */
   readonly validateRules?: boolean;
+  /**
+   * Permission registry used by `applyRoles`. Optional — supply only
+   * if you intend to use the role-based rule expansion. RFC 001
+   * Phase B; see `definePermissions` and `defineRoles`.
+   */
+  readonly permissions?: PermissionRegistry;
+  /** System role registry used by `applyRoles`. Optional. */
+  readonly systemRoles?: RoleRegistry;
 }
 
 /**
@@ -44,7 +58,8 @@ export class TenantAbilityBuilder<
   TId extends TenantIdValue = string,
 > extends AbilityBuilder<TAbility> {
   private readonly _ctx: TenantContext<TId>;
-  private readonly _opts: Required<TenantBuilderOptions>;
+  private readonly _opts: Required<Pick<TenantBuilderOptions, 'tenantField' | 'validateRules'>> &
+    Pick<TenantBuilderOptions, 'permissions' | 'systemRoles'>;
 
   /**
    * Cross-tenant opt-out. Rules added via `crossTenant.can` / `cannot` skip
@@ -66,6 +81,8 @@ export class TenantAbilityBuilder<
     this._opts = {
       tenantField: options.tenantField ?? DEFAULT_TENANT_FIELD,
       validateRules: options.validateRules ?? true,
+      permissions: options.permissions,
+      systemRoles: options.systemRoles,
     };
 
     // CASL's AbilityBuilder assigns `can`/`cannot` as instance properties in
@@ -130,6 +147,113 @@ export class TenantAbilityBuilder<
   /** The context this builder was constructed with. Read-only. */
   public get tenantContext(): TenantContext<TId> {
     return this._ctx;
+  }
+
+  /**
+   * Expand a list of role names into rules using the permission and
+   * system-role registries provided in {@link TenantBuilderOptions}.
+   * RFC 001 Phase B — the bridge between the typed registry primitives
+   * and the underlying CASL builder.
+   *
+   * For each role name:
+   *
+   *   1. Look up the role in `systemRoles`. **Unknown role names are
+   *      silently dropped** so adding a new role to the registry
+   *      doesn't require coordinating JWTs across all live sessions.
+   *   2. Validate every permission reference against `permissions`
+   *      via {@link validatePermissionReferences}. The first unknown
+   *      reference throws `UnknownPermissionError` with the offending
+   *      role + permission name attached.
+   *   3. For each permission, call `can()` (or `crossTenant.can()` if
+   *      the permission carries `crossTenant: true`) with the
+   *      permission's action, subject, fields, and conditions. The
+   *      emitted rule's CASL `reason` field is set to the JSON string
+   *      `{ "role": <name>, "permission": <name> }` so a future
+   *      decision logger (RFC 001 § Q6 — Theme 5) can attribute
+   *      decisions back to the originating role-permission pair
+   *      without re-engineering.
+   *
+   * Calling `applyRoles` without configuring both `permissions` and
+   * `systemRoles` throws — the registries are required for expansion.
+   * Phase C will add `loadCustomRoles` to handle tenant-managed
+   * roles; this method's contract is unchanged when that lands.
+   *
+   * @example
+   *   const builder = new TenantAbilityBuilder(createMongoAbility, ctx, {
+   *     permissions, // from definePermissions()
+   *     systemRoles, // from defineRoles()
+   *   });
+   *   builder.applyRoles(ctx.roles); // ['admin', 'qa-reviewer']
+   *   builder.can('manage', 'AuditLog'); // ad-hoc rules still allowed
+   *   const ability = builder.build();
+   *
+   * @throws MultiTenantCaslError when `permissions` or `systemRoles`
+   *   was not supplied to the builder.
+   * @throws UnknownPermissionError when a role references a permission
+   *   not in the registry.
+   */
+  public applyRoles(roleNames: readonly string[]): void {
+    const permissions = this._opts.permissions;
+    const systemRoles = this._opts.systemRoles;
+    if (!permissions || !systemRoles) {
+      throw new MultiTenantCaslError(
+        'applyRoles() requires both `permissions` and `systemRoles` to be provided in ' +
+          'TenantBuilderOptions. Pass them via definePermissions(...) and defineRoles(...).',
+      );
+    }
+
+    for (const roleName of roleNames) {
+      const role = systemRoles[roleName];
+      // Forward-compat: unknown role names are silently dropped so
+      // adding a new role to the registry doesn't require coordinating
+      // JWTs across all live sessions. RFC 001 § Q4 commentary.
+      if (!role) continue;
+
+      // Throws UnknownPermissionError on first unknown reference.
+      validatePermissionReferences(permissions, roleName, role.permissions);
+
+      for (const permissionName of role.permissions) {
+        // Validation above guarantees this is defined.
+        const permission = permissions[permissionName] as NonNullable<(typeof permissions)[string]>;
+        const target = permission.crossTenant ? this.crossTenant : this;
+        const reason = JSON.stringify({ role: roleName, permission: permissionName });
+
+        // CASL's `can` has a heavy overload set we can't unify through
+        // `Parameters<>` indexing. Cast to a permissive call signature
+        // (same trick used by the wrap helpers above) so we can invoke
+        // each variant: with fields + conditions, with fields only,
+        // with conditions only, or with neither.
+        const can = target.can as unknown as (...args: unknown[]) => {
+          because?: (r: string) => unknown;
+        };
+
+        // Clone fields and conditions before handing them to CASL.
+        // The `can` wrapper above mutates the rule's `conditions`
+        // object in place to inject the tenant predicate; if we
+        // passed the registry's object directly, the SHARED object
+        // would accumulate state across requests (including across
+        // tenants), which is a cross-tenant leak. Spreading creates
+        // a per-call copy that the wrapper is free to mutate.
+        const fields = permission.fields ? [...permission.fields] : undefined;
+        const conditions = permission.conditions ? { ...permission.conditions } : undefined;
+
+        const ruleBuilder =
+          fields !== undefined && conditions !== undefined
+            ? can(permission.action, permission.subject, fields, conditions)
+            : fields !== undefined
+              ? can(permission.action, permission.subject, fields)
+              : conditions !== undefined
+                ? can(permission.action, permission.subject, conditions)
+                : can(permission.action, permission.subject);
+
+        // Attach attribution metadata for the future decision logger
+        // (RFC 001 § Q6). CASL's RuleBuilder exposes `.because(reason)`
+        // which sets the rule's `reason` field; we call it via the
+        // loose type above to avoid coupling to CASL's internal
+        // RuleBuilder generic shape.
+        ruleBuilder.because?.(reason);
+      }
+    }
   }
 }
 

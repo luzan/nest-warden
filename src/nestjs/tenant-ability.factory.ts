@@ -43,6 +43,8 @@ export class TenantAbilityFactory<
       {
         tenantField: this.options.tenantField,
         validateRules: this.options.validateRulesAtBuild,
+        permissions: this.options.permissions,
+        systemRoles: this.options.systemRoles,
       },
     );
     await this.options.defineAbilities(builder, context, request);

@@ -3,6 +3,7 @@ import type { AbilityClass, AnyAbility, CreateAbility } from '@casl/ability';
 import type { TenantContext } from '../core/tenant-context.js';
 import type { TenantAbilityBuilder } from '../core/tenant-ability.builder.js';
 import type { TenantIdValue } from '../core/tenant-id.js';
+import type { PermissionRegistry, RoleRegistry } from '../core/permissions/index.js';
 import type { RelationshipGraph } from '../core/relationships/graph.js';
 
 /**
@@ -74,6 +75,22 @@ export interface TenantAbilityModuleOptions<
    * Required only when rules use `$relatedTo`.
    */
   readonly graph?: RelationshipGraph;
+
+  /**
+   * Permission registry produced by `definePermissions()`. Optional —
+   * supply only if you intend to use {@link TenantAbilityBuilder.applyRoles}
+   * inside `defineAbilities`. RFC 001 Phase B; the library forwards
+   * this verbatim to the per-request builder.
+   */
+  readonly permissions?: PermissionRegistry;
+
+  /**
+   * System role registry produced by `defineRoles()`. Optional —
+   * supply only if you intend to use {@link TenantAbilityBuilder.applyRoles}.
+   * Coexists cleanly with raw `builder.can(...)` calls in
+   * `defineAbilities`; both styles can appear in the same callback.
+   */
+  readonly systemRoles?: RoleRegistry;
 
   /**
    * Run `validateTenantRules` at `.build()` time. Default: `true`. Setting
