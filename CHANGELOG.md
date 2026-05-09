@@ -39,6 +39,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   conventional `useFactory + inject + imports` shape so the loader
   can DI a repository (or any other data source).
 
+- **RFC 001 Phase D — example fully migrated to the registry
+  pattern.** `platform-admin`, `iso-admin`, `merchant-approver`, and
+  `merchant-viewer-public` roles now flow through the registry +
+  `applyRoles`; `agent` (uses `$relatedTo` referencing
+  `ctx.subjectId`) and `cautious-approver` (uses `cannot`) remain
+  inline because their rule shapes don't fit `PermissionDef`
+  cleanly. The hybrid pattern in
+  `examples/nestjs-app/src/auth/permissions.ts` is the reference
+  for consumers in similar shape. Existing 31 E2E tests continue
+  to pass — the registry emits behaviorally identical rules.
+
+- **RFC 001 Phase E — tutorial-style documentation.** New page at
+  `/docs/integration/roles-and-permissions/` covers the full
+  lifecycle: defining permissions, declaring system roles,
+  expanding via `applyRoles`, loading tenant-managed custom roles
+  from a database, sample data model, migration guide from raw
+  `if/include` rules, and an API reference section. Includes a
+  Mermaid diagram of the registry → roles → applyRoles → ability
+  pipeline. Sidebar entry added under Integration Guides.
+
 - **Documentation site** — Markdoc-powered docs at `docs/`. New
   pages: "When (not) to use" (Get Started), "Security Best
   Practices" (Advanced Concepts), "Roadmap" section with RFC 001 and

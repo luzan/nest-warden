@@ -41,6 +41,7 @@ export const sidebarSections: readonly SidebarSection[] = [
       { href: '/docs/integration/nestjs', label: 'NestJS' },
       { href: '/docs/integration/typeorm', label: 'TypeORM' },
       { href: '/docs/integration/rls-postgres', label: 'Postgres RLS' },
+      { href: '/docs/integration/roles-and-permissions', label: 'Roles and Permissions' },
       { href: '/docs/integration/migration-from-casl', label: 'Migrate from @casl/ability' },
       { href: '/docs/integration/migration-from-prisma', label: 'Migrate from @casl/prisma' },
     ],

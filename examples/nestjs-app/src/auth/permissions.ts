@@ -16,43 +16,63 @@ export type AppAbility = MongoAbility<[AppAction, AppSubject]>;
  * Centralized rule definition. Called once per request by the library's
  * `TenantAbilityFactory`. The `builder` is pre-bound to the resolved
  * tenant ID, so every `builder.can()` call automatically pins the tenant
- * predicate — no chance of cross-tenant leakage from a forgotten
- * condition.
+ * predicate.
  *
- * Note the use of `$relatedTo` for graph-based rules: agents see only
- * merchants they are assigned to, regardless of what tenant they belong
- * to. The relationship graph in `app.module.ts` resolves the path into a
- * single SQL `EXISTS` clause when reverse lookups (`accessibleBy`) run.
+ * **The hybrid pattern** — most roles are defined in
+ * `permission-registry.ts` and applied here via `builder.applyRoles`.
+ * Two roles intentionally remain inline because their rule shape
+ * doesn't fit `PermissionDef` cleanly:
+ *
+ *   - `agent` — uses `$relatedTo` with a `where` that closes over
+ *     `ctx.subjectId` (a per-request value). The registry stores
+ *     static permission shapes; a closure over per-request data
+ *     can't be expressed there.
+ *   - `cautious-approver` — combines `can` with `cannot`.
+ *     `PermissionDef` is positive-only by RFC 001 design.
+ *
+ * Both styles compose cleanly: rules emitted by `applyRoles` and
+ * rules emitted by raw `builder.can/cannot` go into the same rule
+ * list, deduplicate by CASL's normal merging, and respect the
+ * tenant-predicate auto-injection identically.
  */
 export function defineAbilities(
   builder: TenantAbilityBuilder<AppAbility>,
   ctx: TenantContext,
 ): void {
   // -----------------------------------------------------------------
-  // Platform admin: cross-tenant read-only access for support staff.
-  // -----------------------------------------------------------------
-  if (ctx.roles.includes('platform-admin')) {
-    builder.crossTenant.can('read', 'Merchant');
-    builder.crossTenant.can('read', 'Payment');
-    builder.crossTenant.can('read', 'Agent');
-  }
-
-  // -----------------------------------------------------------------
-  // ISO admin: tenant-wide management within their own tenant.
-  // -----------------------------------------------------------------
-  if (ctx.roles.includes('iso-admin')) {
-    builder.can('manage', 'Merchant');
-    builder.can('manage', 'Payment');
-    builder.can('manage', 'Agent');
-  }
-
-  // -----------------------------------------------------------------
-  // Agent: sees only merchants they're assigned to (graph traversal).
+  // Registry-driven roles (Phase B + C).
   //
-  // CASL's `MongoQuery` type doesn't recognize `$relatedTo` since it's
-  // an extension introduced by this library. Cast through `never` at the
-  // call site to bypass the operator-set check; the runtime compiler
-  // recognizes and handles the operator end-to-end. See FINDINGS.md § 6.
+  // `applyRoles` resolves each name in ctx.roles against:
+  //   1. The system-role registry exported from
+  //      `permission-registry.ts` — loaded statically at module
+  //      init.
+  //   2. The tenant-managed custom roles loaded by
+  //      `loadCustomRoles` in `app.module.ts` from the
+  //      `custom_roles` table.
+  //
+  // Names not found in either registry are silently dropped (RFC §
+  // Q4 — forward compatibility for live JWTs after a role is added
+  // or removed).
+  //
+  // System roles defined here:
+  //   - platform-admin       (cross-tenant read for support staff)
+  //   - iso-admin            (manage Merchant/Payment/Agent in tenant)
+  //   - merchant-approver    (read + approve pending merchants)
+  //   - merchant-viewer-public (field-projected read)
+  // -----------------------------------------------------------------
+  builder.applyRoles(ctx.roles);
+
+  // -----------------------------------------------------------------
+  // Inline role: `agent` — graph-traversal via $relatedTo.
+  //
+  // The condition references ctx.subjectId, a per-request value.
+  // The permission registry stores static shapes and can't capture
+  // closures over request context, so the agent rule lives here as
+  // a direct builder call. CASL's `MongoQuery` type doesn't
+  // recognize `$relatedTo` (it's a nest-warden extension), so the
+  // call site casts through `never` to satisfy the type checker;
+  // the runtime compiler handles the operator end-to-end. See
+  // FINDINGS.md § 6.
   // -----------------------------------------------------------------
   if (ctx.roles.includes('agent')) {
     builder.can('read', 'Merchant', {
@@ -61,7 +81,7 @@ export function defineAbilities(
         where: { id: ctx.subjectId },
       },
     } as never);
-    // For payments: traverse Payment → Merchant → Agent.
+    // Payments: traverse Payment → Merchant → Agent.
     builder.can('read', 'Payment', {
       $relatedTo: {
         path: ['merchant_of_payment', 'agents_of_merchant'],
@@ -71,55 +91,19 @@ export function defineAbilities(
   }
 
   // -----------------------------------------------------------------
-  // Merchant approver: a tenant-scoped role demonstrating CONDITIONAL
-  // authorization. Read is unconditional within the tenant, but
-  // `approve` only matches merchants whose status is 'pending'. The
-  // condition flows through both forward checks (in-memory matcher)
-  // and reverse lookups (compiled to a SQL `WHERE status = 'pending'`
-  // by `accessibleBy()`).
-  // -----------------------------------------------------------------
-  // -----------------------------------------------------------------
-  // Merchant approver — registry-based (RFC 001 Phase B).
+  // Inline role: `cautious-approver` — negative authorization.
   //
-  // Defined in `permission-registry.ts` as
-  //   'merchants:read'             → can read Merchant
-  //   'merchants:approve-pending'  → can approve Merchant where
-  //                                  status='pending'
-  // and bundled into the `merchant-approver` system role.
+  // `PermissionDef` is positive-only (RFC 001 § Q2). A role that
+  // mixes `can` + `cannot` rules can't be expressed through the
+  // registry, so this role lives inline.
   //
-  // `applyRoles` walks `ctx.roles`, expands each into rules, attaches
-  // a `reason` field to every emitted rule for future audit-log
-  // attribution. Unknown role names are silently dropped, so this
-  // call is safe to invoke with the full role list — the other roles
-  // (handled below as raw `builder.can` calls) won't conflict.
-  // -----------------------------------------------------------------
-  builder.applyRoles(ctx.roles);
-
-  // -----------------------------------------------------------------
-  // Cautious approver: demonstrates NEGATIVE authorization. Same
-  // positive grant as `merchant-approver` (approve pending), but
-  // adds a `cannot` rule that subtracts a specific merchant by name.
-  // The negative rule composes with the positive one — for the
-  // forbidden row, `cannot` wins regardless of role count.
-  //
-  // The `cannot` is scoped to the `approve` action only; the role's
-  // `read` access is unaffected.
+  // Behavior: can read all, can approve pending, but the `cannot`
+  // rule subtracts a specific merchant by name. The cannot wins
+  // even though `merchant-approver` has overlapping positive grants.
   // -----------------------------------------------------------------
   if (ctx.roles.includes('cautious-approver')) {
     builder.can('read', 'Merchant');
     builder.can('approve', 'Merchant', { status: 'pending' } as never);
     builder.cannot('approve', 'Merchant', { name: 'Acme Plumbing' } as never);
-  }
-
-  // -----------------------------------------------------------------
-  // Public viewer: demonstrates FIELD-LEVEL authorization. The role
-  // can read merchants in their tenant, but only specific fields:
-  // id, name, and status. tenantId and createdAt are not exposed.
-  // The library doesn't auto-mask responses — the controller uses
-  // CASL's `permittedFieldsOf` to project the loaded entity before
-  // returning it. See merchants.service#findOneProjected.
-  // -----------------------------------------------------------------
-  if (ctx.roles.includes('merchant-viewer-public')) {
-    builder.can('read', 'Merchant', ['id', 'name', 'status']);
   }
 }
