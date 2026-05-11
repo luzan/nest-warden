@@ -1,13 +1,17 @@
 /**
  * Base class for all errors raised by `nest-warden`. Allows consumers to
- * `instanceof MultiTenantCaslError` to distinguish library errors from
+ * `instanceof NestWardenError` to distinguish library errors from
  * unrelated exceptions.
  *
- * Class name retained as `MultiTenantCaslError` for API compatibility — the
- * library was renamed from `multi-tenant-casl` to `nest-warden` after the
- * 0.1.0-alpha cycle but the error symbol stayed.
+ * Renamed from `MultiTenantCaslError` in 0.3.0-alpha. The old name
+ * remains exported as a `@deprecated` value- and type-level alias
+ * (see bottom of file) so existing `catch (e instanceof
+ * MultiTenantCaslError)` sites compile and behave identically. The
+ * alias is the **same constructor reference**, not a subclass — that's
+ * the only shape that lets both names participate in `instanceof`
+ * symmetrically. The alias is slated for removal in v1.0.
  */
-export class MultiTenantCaslError extends Error {
+export class NestWardenError extends Error {
   constructor(message: string) {
     super(message);
     this.name = new.target.name;
@@ -20,7 +24,7 @@ export class MultiTenantCaslError extends Error {
  * tenant predicate and is not marked `crossTenant`. This is the structural
  * guarantee that no rule can leak across tenants.
  */
-export class CrossTenantViolationError extends MultiTenantCaslError {
+export class CrossTenantViolationError extends NestWardenError {
   constructor(
     public readonly action: string | readonly string[],
     public readonly subject: string | readonly string[] | undefined,
@@ -36,7 +40,7 @@ export class CrossTenantViolationError extends MultiTenantCaslError {
 }
 
 /** Thrown when a tenant context cannot be resolved for a request. */
-export class MissingTenantContextError extends MultiTenantCaslError {
+export class MissingTenantContextError extends NestWardenError {
   constructor(reason = 'No tenant context was resolved for this request.') {
     super(reason);
   }
@@ -52,7 +56,7 @@ export class MissingTenantContextError extends MultiTenantCaslError {
  * no runtime error. This library refuses unknown operators rather than
  * letting them disappear.
  */
-export class UnsupportedOperatorError extends MultiTenantCaslError {
+export class UnsupportedOperatorError extends NestWardenError {
   constructor(public readonly operator: string) {
     super(
       `Operator "${operator}" is not supported by the TypeORM compiler. ` +
@@ -66,7 +70,7 @@ export class UnsupportedOperatorError extends MultiTenantCaslError {
  * was never registered with the graph, or when a path cannot be resolved
  * end-to-end.
  */
-export class RelationshipNotDefinedError extends MultiTenantCaslError {
+export class RelationshipNotDefinedError extends NestWardenError {
   constructor(public readonly relationshipName: string) {
     super(
       `Relationship "${relationshipName}" was referenced in a $relatedTo ` +
@@ -80,7 +84,7 @@ export class RelationshipNotDefinedError extends MultiTenantCaslError {
  * Thrown when a registered relationship sequence does not chain
  * (the `to` of one hop does not match the `from` of the next hop).
  */
-export class InvalidRelationshipPathError extends MultiTenantCaslError {
+export class InvalidRelationshipPathError extends NestWardenError {
   constructor(
     public readonly path: readonly string[],
     public readonly reason: string,
@@ -94,7 +98,7 @@ export class InvalidRelationshipPathError extends MultiTenantCaslError {
  * the configured maximum depth — a guard against pathological multi-hop
  * joins that would generate massive SQL queries.
  */
-export class RelationshipDepthExceededError extends MultiTenantCaslError {
+export class RelationshipDepthExceededError extends NestWardenError {
   constructor(
     public readonly from: string,
     public readonly to: string,
@@ -111,7 +115,7 @@ export class RelationshipDepthExceededError extends MultiTenantCaslError {
 /**
  * Thrown when registering a relationship whose `name` is already in use.
  */
-export class DuplicateRelationshipError extends MultiTenantCaslError {
+export class DuplicateRelationshipError extends NestWardenError {
   constructor(public readonly relationshipName: string) {
     super(
       `Relationship "${relationshipName}" is already registered. Each ` +
@@ -127,7 +131,7 @@ export class DuplicateRelationshipError extends MultiTenantCaslError {
  * registry contract — permission references are validated at module
  * bootstrap and at every `loadCustomRoles` invocation.
  */
-export class UnknownPermissionError extends MultiTenantCaslError {
+export class UnknownPermissionError extends NestWardenError {
   constructor(
     public readonly roleName: string,
     public readonly permission: string,
@@ -146,7 +150,7 @@ export class UnknownPermissionError extends MultiTenantCaslError {
  * fails closed with an empty role set if a `loadCustomRoles` callback
  * returns a colliding entry.
  */
-export class SystemRoleCollisionError extends MultiTenantCaslError {
+export class SystemRoleCollisionError extends NestWardenError {
   constructor(public readonly roleName: string) {
     super(
       `Custom role "${roleName}" collides with a system role of the same ` +
@@ -162,3 +166,22 @@ function stringifyActionOrSubject(
   if (value === undefined) return undefined;
   return Array.isArray(value) ? value.join(',') : (value as string);
 }
+
+/**
+ * @deprecated Renamed to {@link NestWardenError} in 0.3.0-alpha.
+ * Slated for removal in v1.0. The alias is the **same constructor
+ * reference** as `NestWardenError` (not a subclass), so all existing
+ * `instanceof MultiTenantCaslError` catch-sites continue to match
+ * library-thrown errors transparently. Migrate by find-and-replacing
+ * the identifier; no behavior changes.
+ *
+ * Re-exported as both a value (constructor) and a type (instance shape)
+ * so call-sites that use it as either form keep compiling.
+ */
+export const MultiTenantCaslError = NestWardenError;
+/**
+ * @deprecated Renamed to {@link NestWardenError} in 0.3.0-alpha.
+ * Slated for removal in v1.0. See the value-level alias above for the
+ * migration story.
+ */
+export type MultiTenantCaslError = NestWardenError;

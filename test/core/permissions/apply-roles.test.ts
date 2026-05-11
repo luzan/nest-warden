@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { createMongoAbility, type MongoAbility } from '@casl/ability';
 import { TenantAbilityBuilder } from '../../../src/core/tenant-ability.builder.js';
 import { definePermissions, defineRoles } from '../../../src/core/permissions/index.js';
-import { MultiTenantCaslError, UnknownPermissionError } from '../../../src/core/errors.js';
+import { NestWardenError, UnknownPermissionError } from '../../../src/core/errors.js';
 import type { TenantContext } from '../../../src/core/tenant-context.js';
 
 type AppAction = 'read' | 'approve' | 'manage';
@@ -167,14 +167,14 @@ describe('TenantAbilityBuilder.applyRoles', () => {
     const b = new TenantAbilityBuilder<AppAbility, string>(createMongoAbility, ctx, {
       systemRoles,
     });
-    expect(() => b.applyRoles(['admin'])).toThrow(MultiTenantCaslError);
+    expect(() => b.applyRoles(['admin'])).toThrow(NestWardenError);
   });
 
   it('throws when called without a systemRoles registry', () => {
     const b = new TenantAbilityBuilder<AppAbility, string>(createMongoAbility, ctx, {
       permissions,
     });
-    expect(() => b.applyRoles(['admin'])).toThrow(MultiTenantCaslError);
+    expect(() => b.applyRoles(['admin'])).toThrow(NestWardenError);
   });
 
   it('builds an ability whose rules are usable with ability.can()', () => {

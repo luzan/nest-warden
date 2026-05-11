@@ -2,14 +2,14 @@ import { describe, expect, it } from 'vitest';
 import {
   CrossTenantViolationError,
   MissingTenantContextError,
-  MultiTenantCaslError,
+  NestWardenError,
   UnsupportedOperatorError,
 } from '../../src/core/errors.js';
 
 describe('error classes', () => {
-  it('CrossTenantViolationError extends MultiTenantCaslError and reports name', () => {
+  it('CrossTenantViolationError extends NestWardenError and reports name', () => {
     const err = new CrossTenantViolationError('read', 'Merchant', 'tenantId');
-    expect(err).toBeInstanceOf(MultiTenantCaslError);
+    expect(err).toBeInstanceOf(NestWardenError);
     expect(err).toBeInstanceOf(CrossTenantViolationError);
     expect(err.name).toBe('CrossTenantViolationError');
     expect(err.action).toBe('read');
@@ -34,7 +34,7 @@ describe('error classes', () => {
 
   it('MissingTenantContextError uses default reason if none provided', () => {
     const err = new MissingTenantContextError();
-    expect(err).toBeInstanceOf(MultiTenantCaslError);
+    expect(err).toBeInstanceOf(NestWardenError);
     expect(err.name).toBe('MissingTenantContextError');
     expect(err.message).toContain('No tenant context');
   });
@@ -46,7 +46,7 @@ describe('error classes', () => {
 
   it('UnsupportedOperatorError mentions the bad operator and the supported set', () => {
     const err = new UnsupportedOperatorError('$where');
-    expect(err).toBeInstanceOf(MultiTenantCaslError);
+    expect(err).toBeInstanceOf(NestWardenError);
     expect(err.operator).toBe('$where');
     expect(err.message).toContain('$where');
     expect(err.message).toContain('$eq');
@@ -58,7 +58,7 @@ describe('error classes', () => {
       throw new CrossTenantViolationError('read', 'M', 'tenantId');
     } catch (e) {
       expect(e).toBeInstanceOf(Error);
-      expect(e).toBeInstanceOf(MultiTenantCaslError);
+      expect(e).toBeInstanceOf(NestWardenError);
       expect(e).toBeInstanceOf(CrossTenantViolationError);
     }
   });

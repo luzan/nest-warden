@@ -21,7 +21,10 @@ describe('public surface', () => {
     // Error classes
     expect(typeof core.CrossTenantViolationError).toBe('function');
     expect(typeof core.MissingTenantContextError).toBe('function');
+    expect(typeof core.NestWardenError).toBe('function');
+    // Deprecated alias still exported; same constructor reference.
     expect(typeof core.MultiTenantCaslError).toBe('function');
+    expect(core.MultiTenantCaslError).toBe(core.NestWardenError);
     expect(typeof core.UnsupportedOperatorError).toBe('function');
   });
 });

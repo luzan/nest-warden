@@ -49,7 +49,9 @@ will auto-generate per-symbol pages from JSDoc.
 
 ### Errors
 
-- `MultiTenantCaslError` — base class; check via `instanceof`.
+- `NestWardenError` — base class; check via `instanceof`.
+  Re-exported as `MultiTenantCaslError` (`@deprecated`, same
+  constructor reference, slated for removal in v1.0).
 - `CrossTenantViolationError` — rule lacks tenant predicate at `.build()`.
 - `MissingTenantContextError` — `TenantContextService.get()` before resolution.
 - `UnsupportedOperatorError` — TypeORM compiler hit an unknown operator.
