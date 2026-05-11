@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.2.0
+## [0.3.0-alpha] - 2026-05-11
 
 ### Minor Changes
 
