@@ -238,30 +238,29 @@ breaking change with no warning.
 items here are the v1.0 blockers identified during that review —
 all five must land before the API freeze in Theme 4.
 
-**A. CASL coupling invariant.** `TenantAbilityBuilder` overwrites
-`this.can` / `this.cannot` / `this.build` after `super()` so that
-every rule built through the standard call sites gets a tenant
-predicate injected. This relies on CASL's `AbilityBuilder` assigning
-those names as **instance properties** in its own constructor — if
-a future CASL release moves them to the prototype, the wrappers
-silently become no-ops and rules ship without a tenant predicate.
-That is a silent data-leak class.
+**A. CASL coupling invariant.** ✅ **Shipped in 0.3.0-alpha.**
+`TenantAbilityBuilder` captures `this.can` / `this.cannot` /
+`this.build` after `super()` and wraps them so every rule gets a
+tenant predicate injected. This relies on CASL's `AbilityBuilder`
+assigning those names as **instance properties** — if a future CASL
+release moves them to the prototype, the wraps would silently no-op
+and rules would ship without a tenant predicate. That is a silent
+data-leak class.
 
-Concrete actions:
+Landed:
 
-- Add a runtime invariant inside the builder constructor: after the
-  `super()` call, assert
-  `typeof baseCan === 'function' && typeof baseCannot === 'function'
-  && typeof baseBuild === 'function'`. If not, throw a clear
-  `MultiTenantCaslError('Incompatible @casl/ability version — ...')`
-  with a link to the docs.
-- Tighten the peer-dependency range to a closed upper bound:
-  `"@casl/ability": ">=6.7.0 <7.0.0"`. The current `^6.7.0` is
-  semantically the same but the explicit form documents the contract.
-- Add a regression test that builds a single rule with conditions
-  and asserts the tenant key landed on `rule.conditions`. The
-  intent is to fail loudly if the wrap technique ever silently
-  no-ops on a future CASL.
+- `assertCaslCouplingInvariant({can, cannot, build})` is exported
+  from `src/core/tenant-ability.builder.ts` and called inside the
+  `TenantAbilityBuilder` constructor right after the three base
+  methods are captured. Throws `NestWardenError` naming the missing
+  method(s) plus the compatible peer-dependency range.
+- Peer dep tightened from `"@casl/ability": "^6.7.0"` to
+  `">=6.7.0 <7.0.0"` to document the upper bound explicitly.
+- Tests at `test/core/casl-coupling-invariant.test.ts` exercise the
+  positive path (real CASL + real `TenantAbilityBuilder` doesn't
+  throw) and the negative path (each missing method triggers the
+  throw with a diagnostic message naming the method and the version
+  range).
 
 **B. Options ergonomics.** `TenantAbilityModule.forRoot` and
 `forRootAsync` currently carry 9+ optional fields at the top level
@@ -295,20 +294,36 @@ Concrete actions:
   missing role would silently degrade access can opt into hard
   failure.
 
-**F. Public error-class name.** `MultiTenantCaslError` is the base
-error class consumers catch on (`catch (e instanceof
-MultiTenantCaslError)`). The name carries the old project name —
-"multi-tenant-casl" — into every downstream try/catch. Renaming
-post-1.0 is a breaking change for every consumer.
+**F. Public error-class name.** ✅ **Shipped in 0.3.0-alpha.**
+`MultiTenantCaslError` was the base error class consumers caught
+on. The name carried the old project name — "multi-tenant-casl" —
+into every downstream try/catch. Renaming post-1.0 would have been
+a breaking change for every consumer.
 
-Concrete actions:
+Landed:
 
-- Rename to `NestWardenError`.
-- Re-export `MultiTenantCaslError` as a `@deprecated` alias for one
-  release cycle so consumers can migrate incrementally.
-- Mirror the rename across the symbol-keyed metadata constants
-  (`MTC_OPTIONS` token, `:mtc_N` parameter placeholders) — these
-  are internal but the search-and-replace cost is bounded.
+- Class renamed to `NestWardenError`. All nine subclasses
+  (`CrossTenantViolationError`, `MissingTenantContextError`,
+  `UnsupportedOperatorError`, `RelationshipNotDefinedError`,
+  `InvalidRelationshipPathError`, `RelationshipDepthExceededError`,
+  `DuplicateRelationshipError`, `UnknownPermissionError`,
+  `SystemRoleCollisionError`) extend the new base.
+- `MultiTenantCaslError` retained as a `@deprecated` alias —
+  exported as both a value (`export const MultiTenantCaslError =
+  NestWardenError`) and a type (`export type MultiTenantCaslError =
+  NestWardenError`). The alias is the **same constructor reference**,
+  not a subclass, so `instanceof` checks work symmetrically and
+  existing catch-sites match library-thrown errors transparently.
+- Scheduled for removal in v1.0. Tests at
+  `test/core/errors-rename.test.ts` pin the alias contract from
+  outside.
+
+**Not yet:** the internal symbol-keyed metadata constants
+(`MTC_OPTIONS` token, `:mtc_N` parameter placeholders, the
+`__mtCrossTenant` rule marker) still use the old prefix. They're
+internal, consumers don't see them, and changing the rule marker
+in particular would be a runtime-protocol break. Defer to a later
+cycle if the cleanup is worth the risk.
 
 **G. Document supported multi-tenancy models.** The library assumes
 a shared-database, shared-schema tenancy model — `tenantId`-column
