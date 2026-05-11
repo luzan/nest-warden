@@ -9,7 +9,9 @@ GitHub repo before any of these ship.
 
 ## Where we are
 
-**v0.1.0-alpha** — released April 2026.
+**v0.2.0-alpha** — released May 2026.
+
+Shipped in 0.1.0-alpha:
 
 - Tenant-aware ability builder with cross-tenant safety enforced
   at `.build()` time
@@ -21,12 +23,49 @@ GitHub repo before any of these ship.
   resolution, parameterized SQL, EXISTS subqueries for graph hops
 - NestJS module, guards, decorators, request-scoped context
 - Postgres RLS interceptor (defense-in-depth)
-- 100% test coverage on the library; 14 E2E tests against
-  testcontainers Postgres in the example
 - Documentation site (this site)
 
-The library is **API-unstable** at this stage. Names, signatures,
-and module boundaries may change before v1.0.0.
+Shipped in 0.1.0-alpha as RFC 001 (Phases A–E):
+
+- Typed permission registry — `definePermissions`,
+  `validatePermissionReferences`, `UnknownPermissionError`
+- System role registry — `defineRoles`,
+  `assertNoSystemRoleCollision`, `SystemRoleCollisionError`
+- `TenantAbilityBuilder.applyRoles(roleNames)` — expands role names
+  into rules using the registries, with `reason: { role, permission }`
+  attribution metadata on each emitted rule
+- Tenant-managed custom roles loaded per request via
+  `loadCustomRoles(tenantId, ctx)` on `TenantAbilityModule.forRootAsync`
+- Example app fully migrated to the registry pattern; hybrid pattern
+  documented in
+  [`examples/nestjs-app/src/auth/permissions.ts`](https://github.com/luzan/nest-warden/blob/main/examples/nestjs-app/src/auth/permissions.ts)
+- Tutorial documentation at
+  [Roles and Permissions](/docs/integration/roles-and-permissions/)
+
+What changed in 0.2.0-alpha:
+
+- Public roadmap (this page) reconciled with shipped work — completed
+  items in Themes 1 and 2 marked done.
+- New Theme 8 — library coupling and API-freeze hardening —
+  captures the v1.0 blockers from the 2026-05 staff review (CASL
+  internal-coupling invariant, options-surface restructuring,
+  silent role-dropout surfacing, public error-class rename,
+  supported tenancy models documented).
+- New Theme 9 — scope discipline for v1.0 — captures the
+  experimental-status decision for custom roles and the demotion
+  of the RLS interceptor from a core export to a docs recipe.
+- Example app expansion — `examples/nestjs-app/src/payments/` and
+  `src/common/` filled with a payments module, shared pagination
+  DTO and decorator, and new E2E scenarios covering tenant isolation
+  on the graph (`$relatedTo` via `merchant_of_payment →
+  agents_of_merchant`), conditional updates, negative authorization
+  on a refund threshold, and forward-check / reverse-lookup parity.
+  E2E count: 31 → ~40.
+
+The library remains 100% test-covered. **API still unstable** —
+names, signatures, and module boundaries may change before v1.0.0.
+See Theme 4 (API stability commitment) and Theme 8 for the freeze
+plan.
 
 ## Roadmap themes
 
@@ -36,94 +75,98 @@ loose enough that the API design is still open for input.
 
 ### 1. Roles on top of PBAC
 
-**Problem.** Today, consumers express authorization as CASL rules in
-a `defineAbilities` callback. That works for engineering teams who
-can author rules in TypeScript — it does not work for non-technical
-tenant admins who need to manage permissions through a UI.
+**Status: shipped in 0.1.0-alpha (RFC 001, Phases A–E).** This theme
+now tracks the remaining open design questions and any Phase F+ work.
 
-The pattern most multi-tenant SaaS apps end up with is: hard-code a
-small set of "system roles" (Admin, Developer, View Only) and let
-tenants create custom roles by composing predefined permissions.
-nest-warden has no first-class affordance for this today.
+The primitives the theme called for —
+`definePermissions`, `defineRoles`, `TenantAbilityBuilder.applyRoles`,
+and `loadCustomRoles` for tenant-managed custom roles — are all in
+the public API. See the
+[Roles and Permissions](/docs/integration/roles-and-permissions/)
+tutorial and the example at
+[`examples/nestjs-app/src/auth/permissions.ts`](https://github.com/luzan/nest-warden/blob/main/examples/nestjs-app/src/auth/permissions.ts)
+for the working pattern, including the documented hybrid where
+roles that depend on per-request context (e.g., `agent` closing over
+`ctx.subjectId`) remain inline and roles that compose `can` + `cannot`
+(e.g., `cautious-approver`) also remain inline.
 
-**Sketch.**
+**Still open (for Phase F / v1.0):**
 
-```ts
-// Define named permissions once
-const permissions = definePermissions({
-  'merchants:read': { action: 'read', subject: 'Merchant' },
-  'merchants:approve': {
-    action: 'approve',
-    subject: 'Merchant',
-    conditions: { status: 'pending' },
-  },
-  'payments:refund': { action: 'refund', subject: 'Payment' },
-});
+- **Inheritance model.** Today, multiple role names compose by union —
+  rules from each role are concatenated and CASL's normal precedence
+  applies. A formal "RoleA extends RoleB" relation may help large
+  permission sets, but it adds resolution complexity (cycles,
+  ordering) and the union model has been sufficient in production
+  patterns we've seen.
+- **Permission naming convention.** Names (`merchants:read`) are the
+  primary identifier in the registry. The underlying
+  `(action, subject)` pair is the CASL-native form. The two compose,
+  but the canonical convention for permission strings (colon-
+  separated? dot-separated? include the verb tense?) is not pinned
+  by the library and should be.
+- **Storage.** The library stays storage-agnostic — `loadCustomRoles`
+  is the consumer's repository hook. We could ship an optional sample
+  TypeORM entity for custom roles (`@Entity CustomRole` with a
+  `permissions` jsonb column) as a docs recipe. The example app's
+  `custom_roles` table is the de facto reference.
+- **Role assignment audit.** When and where role assignments change
+  is the consumer's domain, but a thin hook
+  (`onRoleResolution(ctx, resolved)`) on the factory would let
+  consumers log "which roles were active for this request" without
+  re-implementing the lookup.
 
-// Define system roles (or load from DB for tenant-managed roles)
-const roles = defineRoles({
-  admin: ['merchants:read', 'merchants:approve', 'payments:refund'],
-  developer: ['merchants:read', 'payments:refund'],
-  viewOnly: ['merchants:read'],
-});
-
-// In the ability factory, expand role names into rules
-builder.applyRoles(ctx.roles, { roles, permissions });
-```
-
-**Open design questions** (need decisions before coding):
-
-- **Custom roles per tenant**, or only a global system-role registry?
-  Tenant-managed custom roles need persistence the library doesn't
-  ship today. System-only is far simpler.
-- **Inheritance model.** Does "Admin extends Developer + adds X"
-  carry weight, or does role union (no inheritance) cover the
-  common case?
-- **Permission naming.** Are permission names (`merchants:read`) the
-  primary identifier, or is the underlying CASL `(action, subject)`
-  pair? Names are friendlier for UIs; pairs preserve full
-  conditional-authz expressiveness.
-- **Storage.** Ship a sample TypeORM entity (`@Entity Role` with
-  a `permissions` jsonb column), or stay storage-agnostic and let
-  consumers wire whatever ORM they use?
-
-A future RFC issue will pin these down. For now: **input wanted.**
+These will be tracked as separate RFCs or follow-on PRs against the
+existing registry primitives — not a rewrite.
 
 ### 2. Deeper example coverage
 
-**Problem.** The example app's 14 E2E tests cover cross-tenant
-isolation, ISO admin reach, agent restriction, and the
-`@AllowCrossTenant` opt-out. They cover the headline behaviors
-but not the long tail — and the long tail is where bugs hide.
+**Status: mostly shipped in 0.1.0-alpha (E2E count 14 → 31) and
+0.2.0-alpha (31 → ~40 with payments).** Remaining items are
+called out below. TDD-first remains the convention — E2E test
+lands in the same change as the code or fixture it covers.
 
-**Concrete additions:**
+**Done:**
 
-- **Conditional rules in flight** — assert that a rule with
-  `{ status: 'active' }` actually filters out inactive rows in
-  both forward checks and `accessibleBy()` SQL.
-- **Update/Delete paths** — `TenantSubscriber.beforeUpdate` should
-  reject rows whose persisted `tenantId` doesn't match the request
-  context. Today this is unit-tested but not E2E-tested.
-- **Field-level restrictions** — `builder.can('read', 'Merchant',
-  ['name', 'status'])` should hide other fields. Verify CASL's
-  field projection through to the controller response.
-- **Multi-role merge** — a user holding both `iso_admin` and
-  `agent` roles: rules from both should compose via union, not
-  conflict.
-- **Negative authorization** — `builder.cannot('refund',
-  'Payment', { amount: { $gt: 10000 } })` blocks high-value
-  refunds even when the positive role permits refunds. E2E
-  proof.
-- **Soft-deleted rows** — interaction between
-  `@DeleteDateColumn` and `accessibleBy()` (does `WHERE
-  deleted_at IS NULL` compose correctly?).
-- **Once role abstraction lands (theme 1)** — wire one tenant
-  in the example to use named roles end-to-end, including
-  a controller that lets the tenant edit roles and immediately
-  see the effect.
+- ✅ **Conditional rules in flight** — rules with `{ status: 'pending' }`
+  filter at the SQL layer; see `conditional-authz` cases in
+  `examples/nestjs-app/test/e2e/merchants-controller.e2e.test.ts`.
+- ✅ **Field-level restrictions** —
+  `GET /merchants/:id/projected` exercises `permittedFieldsOf`
+  end-to-end. A user with `can('read', 'Merchant', ['id', 'name',
+  'status'])` sees only those fields.
+- ✅ **Multi-role merge** — `[agent, merchant-approver]` is covered;
+  rules from both roles union and respect tenant scope.
+- ✅ **Negative authorization** — `cautious-approver` mixes `can` +
+  `cannot`; the `cannot` rule subtracts a specific merchant by name
+  even though the role's positive grants would otherwise permit it.
+  A second `cautious-refunder` role added in 0.2.0-alpha exercises
+  the same pattern for refund amounts above a threshold.
+- ✅ **Soft-deleted rows** — `@DeleteDateColumn` on `Merchant` is
+  covered; `with_deleted=true` surfaces soft-deleted rows under
+  the same tenant scope.
+- ✅ **Custom roles loaded at request time (Phase C)** —
+  `loadCustomRoles` is wired to a real `custom_roles` table; tests
+  prove tenant-scoped registration (a role registered for ACME does
+  nothing for BETA users).
+- ✅ **Payments module with end-to-end scenarios** (0.2.0-alpha) —
+  the `payments/` and `common/` modules in `examples/nestjs-app/`
+  exercise `accessibleBy()` against the `merchant_of_payment →
+  agents_of_merchant` graph hop, conditional updates
+  (`authorized → captured` status transitions), and negative auth
+  on a refund-amount threshold.
 
-These tests are TDD-first per the example's existing pattern:
-the test goes in before the code or fixture change.
+**Still pending:**
+
+- ⬜ **Update/Delete paths against `TenantSubscriber.beforeUpdate`** —
+  the subscriber should reject rows whose persisted `tenantId`
+  doesn't match the request context. Today this is unit-tested but
+  not E2E-tested against a real Postgres + RLS path. Add a dedicated
+  E2E that mutates a row whose persisted `tenantId` differs from
+  the active context and assert the subscriber rejects.
+- ⬜ **Adversarial scenarios paired with the JWT-auth example
+  (Theme 7 PR A)** — once `FakeAuthGuard` is replaced with a real
+  JWT path, E2E coverage for tampered claims, expired tokens, and
+  missing-membership cases lands alongside.
 
 ### 3. Tenant-aware webhook security
 
@@ -188,6 +231,163 @@ breaking change with no warning.
   before removal.
 - The freeze gate is one of two v1.0.0 prerequisites. The other
   is theme 6 (production soak).
+
+### 4a. Library coupling + API freeze hardening (Theme 8)
+
+**Source.** 2026-05 staff review of the v0.1.0-alpha codebase. The
+items here are the v1.0 blockers identified during that review —
+all five must land before the API freeze in Theme 4.
+
+**A. CASL coupling invariant.** `TenantAbilityBuilder` overwrites
+`this.can` / `this.cannot` / `this.build` after `super()` so that
+every rule built through the standard call sites gets a tenant
+predicate injected. This relies on CASL's `AbilityBuilder` assigning
+those names as **instance properties** in its own constructor — if
+a future CASL release moves them to the prototype, the wrappers
+silently become no-ops and rules ship without a tenant predicate.
+That is a silent data-leak class.
+
+Concrete actions:
+
+- Add a runtime invariant inside the builder constructor: after the
+  `super()` call, assert
+  `typeof baseCan === 'function' && typeof baseCannot === 'function'
+  && typeof baseBuild === 'function'`. If not, throw a clear
+  `MultiTenantCaslError('Incompatible @casl/ability version — ...')`
+  with a link to the docs.
+- Tighten the peer-dependency range to a closed upper bound:
+  `"@casl/ability": ">=6.7.0 <7.0.0"`. The current `^6.7.0` is
+  semantically the same but the explicit form documents the contract.
+- Add a regression test that builds a single rule with conditions
+  and asserts the tenant key landed on `rule.conditions`. The
+  intent is to fail loudly if the wrap technique ever silently
+  no-ops on a future CASL.
+
+**B. Options ergonomics.** `TenantAbilityModule.forRoot` and
+`forRootAsync` currently carry 9+ optional fields at the top level
+(`defineAbilities`, `resolveTenantContext`, `permissions`,
+`systemRoles`, `loadCustomRoles`, `relationships`, `tenantField`,
+`validateRules`, `registerAsGlobal`). Each is individually
+defensible; the aggregate is a god interface.
+
+Concrete action: group semantically into sub-objects —
+`{ builder: { defineAbilities, validateRules, tenantField },
+   tenant: { resolveTenantContext, registerAsGlobal },
+   roles: { permissions, systemRoles, loadCustomRoles },
+   graph: { relationships } }`.
+Breaking change, but appropriate while we're still pre-1.0.
+Publish a migration table in the CHANGELOG.
+
+**E. Surface silent role-dropouts.** `TenantAbilityFactory` drops
+invalid custom roles (collision with system role names, unknown
+permission references) via `console.warn`. On a busy SaaS request
+path that's at best noisy and at worst silently broken.
+
+Concrete actions:
+
+- Replace `console.warn` with an injectable
+  `Logger` (NestJS `LoggerService`) instance, defaulting to the
+  NestJS root logger so structured logs route through whatever
+  pino / winston pipeline the consumer already runs.
+- Add a `silentRoleDropouts: false` option (default `false`)
+  that escalates dropouts from "log + drop" to "throw a structured
+  `CustomRoleValidationError`." Production deployments where a
+  missing role would silently degrade access can opt into hard
+  failure.
+
+**F. Public error-class name.** `MultiTenantCaslError` is the base
+error class consumers catch on (`catch (e instanceof
+MultiTenantCaslError)`). The name carries the old project name —
+"multi-tenant-casl" — into every downstream try/catch. Renaming
+post-1.0 is a breaking change for every consumer.
+
+Concrete actions:
+
+- Rename to `NestWardenError`.
+- Re-export `MultiTenantCaslError` as a `@deprecated` alias for one
+  release cycle so consumers can migrate incrementally.
+- Mirror the rename across the symbol-keyed metadata constants
+  (`MTC_OPTIONS` token, `:mtc_N` parameter placeholders) — these
+  are internal but the search-and-replace cost is bounded.
+
+**G. Document supported multi-tenancy models.** The library assumes
+a shared-database, shared-schema tenancy model — `tenantId`-column
+scoping plus optional RLS. Schema-per-tenant (different
+`search_path` per request) and database-per-tenant (different
+`DataSource` per request) are **not** supported in v1.0. Today this
+constraint is implicit.
+
+Concrete actions:
+
+- Add a "Supported tenancy models" subsection at the bottom of
+  [Why nest-warden?](/docs/get-started/why/) with an explicit
+  table: shared-DB/shared-schema ✅, schema-per-tenant ❌,
+  DB-per-tenant ❌.
+- Add a one-page reference at `/docs/core-concepts/tenancy-models/`
+  explaining what each model is, where the library would have to
+  change to support the others (DI scoping of `DataSource`,
+  `search_path` injection), and that future support is **not** on
+  the roadmap unless concrete demand surfaces post-v1.0.
+
+### 4b. Scope discipline for v1.0 (Theme 9)
+
+**Source.** Same staff review. These items are about *removing*
+or *demoting* surface, not adding. v1.0 ships a smaller, more
+defensible API by deferring two pieces that are weakly differentiated
+from what a consumer can write in 30 lines.
+
+**C. Custom-roles is experimental in v1.0.** `loadCustomRoles` and
+the custom-role validation/collision logic landed in 0.1.0-alpha as
+RFC 001 Phase C. It works, the example uses it, and the tutorial
+documents it. But "tenant-managed custom roles" is an RBAC subsystem
+that will accumulate ongoing feature requests (inheritance,
+versioning, assignment audit) — the kind of surface that locks the
+library into a maintenance trajectory.
+
+Concrete actions:
+
+- Mark `loadCustomRoles`, `CustomRoleEntry`, and the validation
+  helpers as `@experimental` in JSDoc with a one-line note linking
+  to this theme.
+- Keep the API as-is for v1.0. Re-evaluate after the production
+  soak (Theme 6). If churn exceeds two breaking changes per
+  cycle, extract to a `nest-warden-roles` companion package post-
+  v1.0 so the core library's API surface doesn't churn with it.
+
+**D. RLS interceptor demotion.** `RlsTransactionInterceptor` wraps
+every request (including reads) in a Postgres transaction and runs
+`SELECT set_config('app.current_tenant_id', $1, true)`. Useful, but
+~30 lines of meaningful logic. Most of the value is in the
+*explanation* (why `set_config` instead of `SET LOCAL`, RLS as
+defense-in-depth) — not the importable class.
+
+The current default is also a footgun for high-RPS workloads
+because every request holds a pool connection for its lifetime.
+
+Concrete actions:
+
+- Move the canonical example to a docs recipe at
+  `/docs/advanced/recipes/` titled "RLS as defense-in-depth."
+  Include the full `set_config` rationale and the trade-off
+  discussion.
+- Keep `RlsTransactionInterceptor` as an export but default it to
+  **off** in module options (`rls: { enabled: false }`), with the
+  JSDoc emphasizing that consumers should think about connection-
+  pool pressure before enabling.
+- Add a section to the recipe on alternative strategies: scoped
+  transactions inside services, request-time
+  `SET app.current_tenant_id` via a TypeORM subscriber, or
+  Postgres's `app.current_tenant_id` via session pooling
+  (PgBouncer caveat).
+
+**H. Empty `test/integration/` and `test/e2e/` directories.** At
+the library root, both directories exist but are empty — the real
+E2E suite lives in `examples/nestjs-app/test/e2e/`. New
+maintainers reading the layout will assume these are unfilled
+TODOs.
+
+Concrete action: delete the empty directories, or replace each
+with a `README.md` that points to the example app's E2E suite.
 
 ### 5. Authorization decision logging
 
