@@ -53,6 +53,14 @@ jobs:
   publish:
     name: Publish to npm + create GitHub Release
     runs-on: ubuntu-latest
+    # `NPM_TOKEN` is stored as an environment secret under the `main`
+    # GitHub environment (not as a repository secret). Declaring the
+    # environment here is what makes `secrets.NPM_TOKEN` resolve in
+    # the `pnpm publish` step. The environment carries no branch
+    # protection rules — defense against tags pointing at non-main
+    # commits is enforced by the `Verify tagged commit is reachable
+    # from main` step below, not by GitHub's environment gating.
+    environment: main
     timeout-minutes: 20
     steps:
       - name: Resolve tag name
