@@ -6,6 +6,10 @@ import { accessibleBy } from 'nest-warden/typeorm';
 import { TenantAbilityFactory, TenantContextService } from 'nest-warden/nestjs';
 import { Merchant } from '../entities/merchant.entity.js';
 import { relationshipGraph } from '../app.relationships.js';
+import {
+  resolvePagination,
+  type ResolvedPagination,
+} from '../common/dto/pagination-query.dto.js';
 import type { AppAbility } from '../auth/permissions.js';
 
 const ALL_MERCHANT_FIELDS: readonly (keyof Merchant)[] = [
@@ -40,13 +44,28 @@ export class MerchantsService {
     private readonly tenantContext: TenantContextService,
   ) {}
 
-  async findAll(opts: { withDeleted?: boolean } = {}): Promise<Merchant[]> {
+  async findAll(opts: { withDeleted?: boolean; pagination?: ResolvedPagination } = {}): Promise<Merchant[]> {
     const ability = await this.abilityFactory.build();
     const repo = this.dataSource.getRepository(Merchant);
     const qb = repo.createQueryBuilder('m');
     if (opts.withDeleted) qb.withDeleted();
     accessibleBy(ability, 'read', 'Merchant', { alias: 'm', graph: relationshipGraph }).applyTo(qb);
+    if (opts.pagination) {
+      // ORDER BY id (UUID) for stable pagination; created_at ties
+      // when the seed inserts rows in a single statement.
+      qb.take(opts.pagination.limit).skip(opts.pagination.offset).orderBy('m.id', 'ASC');
+    }
     return qb.getMany();
+  }
+
+  /**
+   * Shared pagination parser. Exposed on the service so the
+   * controller stays declarative — the clamp logic lives once in
+   * `common/dto/pagination-query.dto.ts`.
+   */
+  // eslint-disable-next-line @typescript-eslint/class-methods-use-this
+  parsePagination(raw: { limit?: string | string[]; offset?: string | string[] }): ResolvedPagination {
+    return resolvePagination(raw);
   }
 
   /**

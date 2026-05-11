@@ -6,13 +6,23 @@ import type { DataSource } from 'typeorm';
  *   tenant ACME (uuid 11111111-...)
  *     ├── agent alice (assigned to merchants m1, m2)
  *     ├── agent bob   (assigned to merchant m2)
- *     ├── merchant m1 (active)   — payments p1, p2
- *     ├── merchant m2 (pending)  — payment p3
+ *     ├── merchant m1 (active)   — payments p1 ($50, captured),
+ *     │                            p2 ($120, pending),
+ *     │                            p5 ($80, authorized)
+ *     ├── merchant m2 (pending)  — payments p3 ($75, captured),
+ *     │                            p6 ($250, captured)
  *     └── merchant m3 (closed)   — no agents assigned
  *
  *   tenant BETA (uuid 22222222-...)
  *     ├── agent carol (assigned to merchant m4)
- *     └── merchant m4 (active)   — payment p4
+ *     └── merchant m4 (active)   — payment p4 ($99.99, authorized)
+ *
+ * The amount mix is deliberate: p1 / p3 / p5 sit under the
+ * `cautious-refunder` 10 000-cent threshold, p2 / p6 sit above, and
+ * p5 is the only authorized ACME payment for the capture-transition
+ * scenario. p6 is captured (refund-eligible) and over the threshold —
+ * exercises the negative-auth path without polluting earlier merchant
+ * tests that ignore payment shapes.
  */
 export const TENANT_ACME = '11111111-1111-1111-1111-111111111111';
 export const TENANT_BETA = '22222222-2222-2222-2222-222222222222';
@@ -30,6 +40,8 @@ export const PAYMENT_P1 = 'cccccccc-cccc-cccc-cccc-cccccccc0001';
 export const PAYMENT_P2 = 'cccccccc-cccc-cccc-cccc-cccccccc0002';
 export const PAYMENT_P3 = 'cccccccc-cccc-cccc-cccc-cccccccc0003';
 export const PAYMENT_P4 = 'cccccccc-cccc-cccc-cccc-cccccccc0004';
+export const PAYMENT_P5 = 'cccccccc-cccc-cccc-cccc-cccccccc0005';
+export const PAYMENT_P6 = 'cccccccc-cccc-cccc-cccc-cccccccc0006';
 
 export async function seedFixture(dataSource: DataSource): Promise<void> {
   // Use a system role / superuser for seeding; otherwise RLS would block
@@ -80,14 +92,23 @@ export async function seedFixture(dataSource: DataSource): Promise<void> {
 
     await runner.query(
       `INSERT INTO payments(id, tenant_id, merchant_id, amount_cents, status) VALUES
-       ($1, $2, $6, 5000,  'captured'),
-       ($3, $2, $6, 12000, 'pending'),
-       ($4, $2, $7, 7500,  'captured'),
-       ($5, $8, $9, 9999,  'authorized')`,
+       ($1,  $2, $8, 5000,  'captured'),
+       ($3,  $2, $8, 12000, 'pending'),
+       ($4,  $2, $9, 7500,  'captured'),
+       ($5,  $10, $11, 9999,  'authorized'),
+       ($6,  $2, $8, 8000,  'authorized'),
+       ($7,  $2, $9, 25000, 'captured')`,
       [
-        PAYMENT_P1, TENANT_ACME, PAYMENT_P2, PAYMENT_P3, PAYMENT_P4,
-        MERCHANT_M1, MERCHANT_M2,
-        TENANT_BETA, MERCHANT_M4,
+        PAYMENT_P1, TENANT_ACME,
+        PAYMENT_P2,
+        PAYMENT_P3,
+        PAYMENT_P4,
+        PAYMENT_P5,
+        PAYMENT_P6,
+        MERCHANT_M1,
+        MERCHANT_M2,
+        TENANT_BETA,
+        MERCHANT_M4,
       ],
     );
 
