@@ -47,6 +47,9 @@
   },
   "scripts": {
     "build": "tsup",
+    "dev": "tsup --watch --onSuccess 'bash scripts/sync-example.sh --skip-build'",
+    "sync:example": "bash scripts/sync-example.sh",
+    "sync:example:fast": "bash scripts/sync-example.sh --skip-build",
     "clean": "rimraf dist",
     "typecheck": "tsc --noEmit",
     "lint": "eslint \"src/**/*.ts\" \"test/**/*.ts\"",
