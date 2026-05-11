@@ -1,41 +1,189 @@
 name: Release
 
-# Manual trigger only — flip back to `push: { branches: [main] }`
-# when ready to publish via changesets. The workflow itself is fully
-# wired (changesets/action@v1 + NPM_TOKEN), it just won't fire on
-# push until this trigger is changed.
+# Publishes `nest-warden` to npm and creates a GitHub Release when a
+# version tag (e.g. `v0.2.0-alpha`, `v1.0.0-beta.1`, `v1.0.0`) is
+# pushed. `workflow_dispatch` is kept as an emergency re-run path
+# in case a tag-triggered run fails mid-flight.
+#
+# Local release flow (single maintainer):
+#
+#   1. Author `.changeset/*.md` files alongside the changes they
+#      describe (already required by the repo's quality bar).
+#   2. When ready to cut a version:
+#        pnpm changeset version    # consumes changesets, bumps
+#                                  # package.json + CHANGELOG.md
+#        git add . && git commit -m "chore(release): vX.Y.Z[-tag]"
+#        git push origin main
+#   3. Tag the release commit and push:
+#        git tag vX.Y.Z[-tag]
+#        git push origin vX.Y.Z[-tag]
+#   4. This workflow runs:
+#        - re-runs the gates (typecheck, lint, coverage, build)
+#        - asserts the tag matches the version in package.json
+#        - asserts the tagged commit is reachable from `main`
+#        - computes the npm dist-tag from the tag suffix
+#          (alpha → alpha, beta → beta, rc → next, else latest)
+#        - asserts the packed tarball is under 200 KB
+#        - publishes to npm
+#        - creates a GitHub Release with auto-generated notes
+#
+# `--provenance` is intentionally omitted: npm's provenance signing
+# requires a public source repo, and `luzan/nest-warden` is private
+# during the alpha cycle. Re-enable by adding `--provenance` to the
+# publish step once the repo is public (planned for v1.0).
 on:
+  push:
+    tags: ['v*']
   workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to publish (must already exist, e.g. v0.2.0-alpha).'
+        required: true
+        type: string
 
 concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
 
+permissions:
+  contents: write     # for `softprops/action-gh-release@v2` to create the release
+  id-token: write     # reserved for npm provenance once repo is public
+
 jobs:
-  release:
-    name: Release
+  publish:
+    name: Publish to npm + create GitHub Release
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
-      pull-requests: write
-      id-token: write
+    # `NPM_TOKEN` is stored as an environment secret under the `main`
+    # GitHub environment (not as a repository secret). Declaring the
+    # environment here is what makes `secrets.NPM_TOKEN` resolve in
+    # the `pnpm publish` step. The environment carries no branch
+    # protection rules — defense against tags pointing at non-main
+    # commits is enforced by the `Verify tagged commit is reachable
+    # from main` step below, not by GitHub's environment gating.
+    environment: main
+    timeout-minutes: 20
     steps:
+      - name: Resolve tag name
+        id: tag
+        # On a tag push, github.ref_name is the tag. On manual
+        # dispatch, the input carries it. Surface a single
+        # canonical value the rest of the job uses.
+        run: |
+          if [ -n "${{ inputs.tag }}" ]; then
+            REF="${{ inputs.tag }}"
+          else
+            REF="${GITHUB_REF_NAME}"
+          fi
+          echo "name=${REF}" >> "$GITHUB_OUTPUT"
+          echo "version=${REF#v}" >> "$GITHUB_OUTPUT"
+
       - uses: actions/checkout@v4
         with:
+          # Full history so we can verify the tagged commit is on main.
           fetch-depth: 0
+          ref: ${{ steps.tag.outputs.name }}
+
       - uses: pnpm/action-setup@v4
         with: { version: 9 }
+
       - uses: actions/setup-node@v4
         with:
           node-version: 20
           cache: pnpm
           registry-url: https://registry.npmjs.org
+
       - run: pnpm install --frozen-lockfile
-      - run: pnpm build
-      - uses: changesets/action@v1
-        with:
-          publish: pnpm release
-          version: pnpm version-packages
+
+      # Defense-in-depth: re-run the gates the underlying commit
+      # already passed in `ci.yml`. A corrupted tag push or a
+      # divergent local commit would otherwise sneak through.
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Tests with 100% coverage gate
+        run: pnpm test:coverage
+
+      - name: Build
+        run: pnpm build
+
+      - name: Verify tag matches package.json version
+        run: |
+          PKG_VERSION=$(node -p "require('./package.json').version")
+          TAG_VERSION="${{ steps.tag.outputs.version }}"
+          if [ "$TAG_VERSION" != "$PKG_VERSION" ]; then
+            echo "::error::Tag '${TAG_VERSION}' does not match package.json version '${PKG_VERSION}'. Run 'pnpm changeset version' and recommit before tagging."
+            exit 1
+          fi
+          echo "Tag and package.json agree on ${PKG_VERSION}"
+
+      - name: Verify tagged commit is reachable from main
+        run: |
+          git fetch origin main --depth=0 || git fetch origin main
+          if ! git merge-base --is-ancestor "${GITHUB_SHA}" "origin/main"; then
+            echo "::error::Tagged commit ${GITHUB_SHA} is not reachable from origin/main. Refusing to publish from a divergent ref."
+            exit 1
+          fi
+          echo "Tagged commit is on main."
+
+      - name: Compute npm dist-tag
+        id: distTag
+        # Versions like `0.2.0-alpha` or `1.0.0-alpha.3` go to `alpha`;
+        # `1.0.0-beta` → `beta`; `1.0.0-rc.1` → `next`; everything
+        # else (e.g. `1.0.0`) → `latest`. Consumers running
+        # `npm install nest-warden` get the latest stable; consumers
+        # running `npm install nest-warden@alpha` opt into the
+        # pre-release channel.
+        run: |
+          VERSION="${{ steps.tag.outputs.version }}"
+          if [[ "$VERSION" == *"alpha"* ]]; then
+            echo "tag=alpha" >> "$GITHUB_OUTPUT"
+          elif [[ "$VERSION" == *"beta"* ]]; then
+            echo "tag=beta" >> "$GITHUB_OUTPUT"
+          elif [[ "$VERSION" == *"rc"* ]]; then
+            echo "tag=next" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=latest" >> "$GITHUB_OUTPUT"
+          fi
+          echo "Selected dist-tag for ${VERSION}: see GITHUB_OUTPUT"
+
+      - name: Bundle-size budget (200 KB tarball)
+        # Mirrors the ci.yml check on the same packed tarball npm
+        # consumers actually download. Failing here means a
+        # post-CI change (e.g. a tag pointing at a different commit)
+        # pushed the tarball over budget.
+        run: |
+          pnpm pack --pack-destination /tmp/pack-out
+          TARBALL=$(ls /tmp/pack-out/*.tgz | head -1)
+          SIZE=$(du -sk "$TARBALL" | cut -f1)
+          echo "tarball: $(basename "$TARBALL") (${SIZE} KB)"
+          if [ "$SIZE" -gt 200 ]; then
+            echo "::error::published tarball exceeds 200 KB budget"
+            exit 1
+          fi
+
+      - name: Publish to npm
+        # `--no-git-checks` skips pnpm's "working tree clean" check —
+        # in CI the tree is always clean, but pnpm checks for a
+        # `.git` directory and complains about uncommitted changes
+        # that don't exist. `--access public` is required for scoped
+        # packages but harmless for unscoped; explicit is better.
+        run: pnpm publish --tag ${{ steps.distTag.outputs.tag }} --access public --no-git-checks
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tag.outputs.name }}
+          # Auto-generates release notes from PRs merged since the
+          # previous tag. The repo's CHANGELOG.md stays as the
+          # long-form record; the GitHub Release notes are the
+          # PR-grain view.
+          generate_release_notes: true
+          # Any alpha/beta/rc tag is flagged as a GitHub pre-release
+          # so the latest "release" badge on the repo points at the
+          # most recent stable, not the most recent pre-release.
+          prerelease: ${{ contains(steps.tag.outputs.name, 'alpha') || contains(steps.tag.outputs.name, 'beta') || contains(steps.tag.outputs.name, 'rc') }}

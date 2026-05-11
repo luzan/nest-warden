@@ -38,8 +38,16 @@ export class MerchantsController {
 
   @CheckPolicies((ability: AppAbility) => ability.can('read', 'Merchant'))
   @Get()
-  async list(@Query('with_deleted') withDeleted?: string): Promise<Merchant[]> {
-    return this.merchants.findAll({ withDeleted: withDeleted === 'true' });
+  async list(
+    @Query('with_deleted') withDeleted?: string,
+    @Query('limit') limit?: string,
+    @Query('offset') offset?: string,
+  ): Promise<Merchant[]> {
+    const pagination = this.merchants.parsePagination({ limit, offset });
+    return this.merchants.findAll({
+      withDeleted: withDeleted === 'true',
+      pagination,
+    });
   }
 
   // Conditional-authz demo. The route is gated on `approve Merchant`,

@@ -65,6 +65,22 @@ export const permissions = definePermissions<AppAction, AppSubject>({
     action: 'manage',
     subject: 'Payment',
   },
+  'payments:read': {
+    action: 'read',
+    subject: 'Payment',
+  },
+  'payments:capture': {
+    // Only `status: 'authorized'` payments can be captured — the
+    // conditional rule prevents double-capture even if the controller
+    // forgets to gate on status.
+    action: 'update',
+    subject: 'Payment',
+    conditions: { status: 'authorized' },
+  },
+  'payments:refund': {
+    action: 'refund',
+    subject: 'Payment',
+  },
 
   // -----------------------------------------------------------------
   // Agent permissions (records, not the user role)
@@ -136,5 +152,10 @@ export const systemRoles = defineRoles<Permission>({
     description:
       'Read access limited to id/name/status fields (field-level restriction demo)',
     permissions: ['merchants:read-public'],
+  },
+  'payment-approver': {
+    description:
+      'Reads, captures, and refunds payments within the active tenant',
+    permissions: ['payments:read', 'payments:capture', 'payments:refund'],
   },
 });

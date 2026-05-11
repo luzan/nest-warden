@@ -14,6 +14,7 @@ import { Payment } from './entities/payment.entity.js';
 import { AgentMerchantAssignment } from './entities/agent-merchant-assignment.entity.js';
 import { CustomRole } from './entities/custom-role.entity.js';
 import { MerchantsModule } from './merchants/merchants.module.js';
+import { PaymentsModule } from './payments/payments.module.js';
 import { getExampleDataSourceConfig } from './database/datasource.config.js';
 import { relationshipGraph } from './app.relationships.js';
 
@@ -72,6 +73,7 @@ void (null as unknown as ForbiddenException); // type-only retain
       }),
     }),
     MerchantsModule,
+    PaymentsModule,
   ],
   providers: [
     // FakeAuthGuard runs BEFORE the TenantPoliciesGuard so request.user is

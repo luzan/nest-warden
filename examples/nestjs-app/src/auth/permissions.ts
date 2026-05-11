@@ -8,7 +8,14 @@ import type { TenantContext } from 'nest-warden';
  * IDE support: `ability.can('approve', 'Payment')` autocompletes both
  * arguments.
  */
-export type AppAction = 'read' | 'create' | 'update' | 'delete' | 'manage' | 'approve';
+export type AppAction =
+  | 'read'
+  | 'create'
+  | 'update'
+  | 'delete'
+  | 'manage'
+  | 'approve'
+  | 'refund';
 export type AppSubject = 'Merchant' | 'Payment' | 'Agent' | 'all';
 export type AppAbility = MongoAbility<[AppAction, AppSubject]>;
 
@@ -105,5 +112,28 @@ export function defineAbilities(
     builder.can('read', 'Merchant');
     builder.can('approve', 'Merchant', { status: 'pending' } as never);
     builder.cannot('approve', 'Merchant', { name: 'Acme Plumbing' } as never);
+  }
+
+  // -----------------------------------------------------------------
+  // Inline role: `cautious-refunder` — negative authorization on a
+  // numeric threshold.
+  //
+  // Mirrors `cautious-approver` but for payments: read all payments,
+  // refund all payments, BUT cannot refund payments whose
+  // `amountCents` exceeds 10 000 (US$100). The `cannot` rule overrides
+  // the positive `refund` grant for matching rows, regardless of how
+  // the role was assigned.
+  //
+  // Lives inline because `PermissionDef` is positive-only (RFC 001 §
+  // Q2). A role mixing `can` + `cannot` can't be expressed through
+  // the registry; the hybrid pattern (registry-driven roles + inline
+  // closures for negative rules) is the documented escape hatch.
+  // -----------------------------------------------------------------
+  if (ctx.roles.includes('cautious-refunder')) {
+    builder.can('read', 'Payment');
+    builder.can('refund', 'Payment');
+    builder.cannot('refund', 'Payment', {
+      amountCents: { $gt: 10000 },
+    } as never);
   }
 }
