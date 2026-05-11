@@ -76,7 +76,10 @@ describe('Theme 8F — NestWardenError rename + MultiTenantCaslError alias', () 
       ['MissingTenantContextError', () => new MissingTenantContextError()],
       ['UnsupportedOperatorError', () => new UnsupportedOperatorError('$where')],
       ['RelationshipNotDefinedError', () => new RelationshipNotDefinedError('foo')],
-      ['InvalidRelationshipPathError', () => new InvalidRelationshipPathError(['a', 'b'], 'reason')],
+      [
+        'InvalidRelationshipPathError',
+        () => new InvalidRelationshipPathError(['a', 'b'], 'reason'),
+      ],
       ['RelationshipDepthExceededError', () => new RelationshipDepthExceededError('A', 'B', 3)],
       ['DuplicateRelationshipError', () => new DuplicateRelationshipError('foo')],
       ['UnknownPermissionError', () => new UnknownPermissionError('admin', 'perm')],
