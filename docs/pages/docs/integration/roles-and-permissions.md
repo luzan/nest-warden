@@ -393,7 +393,9 @@ interface CustomRoleEntry<TPermission extends string = string> {
 
 ### `UnknownPermissionError`, `SystemRoleCollisionError`
 
-Both extend `MultiTenantCaslError` (which extends `Error`). Carry
+Both extend `NestWardenError` (which extends `Error`; renamed from
+`MultiTenantCaslError` in 0.3.0-alpha — the old name is still
+exported as a `@deprecated` alias for one cycle). Carry
 diagnostic fields for the offending role + permission name. See
 the [errors module](https://github.com/luzan/nest-warden/blob/main/src/core/errors.ts)
 for the full surface.

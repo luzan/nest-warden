@@ -1297,7 +1297,7 @@ packages:
     resolution: {directory: ../.., type: directory}
     engines: {node: '>=18.18.0'}
     peerDependencies:
-      '@casl/ability': ^6.7.0
+      '@casl/ability': '>=6.7.0 <7.0.0'
       '@nestjs/common': ^10 || ^11
       '@nestjs/core': ^10 || ^11
       reflect-metadata: ^0.1 || ^0.2

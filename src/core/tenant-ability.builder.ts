@@ -5,7 +5,7 @@ import {
   type AnyAbility,
   type CreateAbility,
 } from '@casl/ability';
-import { MultiTenantCaslError } from './errors.js';
+import { NestWardenError } from './errors.js';
 import {
   type CustomRoleEntry,
   type PermissionRegistry,
@@ -102,12 +102,27 @@ export class TenantAbilityBuilder<
       customRoles: options.customRoles,
     };
 
-    // CASL's AbilityBuilder assigns `can`/`cannot` as instance properties in
-    // its own constructor (see casl-ability/src/AbilityBuilder.ts). After
-    // `super()`, `this.can` is the bound function we want to wrap. There is
-    // no usable `super.can` — the prototype is empty for these names.
+    // CASL's AbilityBuilder assigns `can`/`cannot`/`build` as INSTANCE
+    // properties in its own constructor (see casl-ability/src/AbilityBuilder.ts).
+    // After `super()`, `this.can`/`this.cannot`/`this.build` are the
+    // bound functions we want to wrap. There is no usable `super.*` —
+    // the prototype is empty for these names.
+    //
+    // This implementation detail is load-bearing: every rule built through
+    // the wrapped `can`/`cannot` gets a tenant predicate injected. If a
+    // future CASL release moves these to the prototype, the captures
+    // below would silently be `undefined` and the wraps would no-op,
+    // shipping rules without a tenant predicate — a silent data-leak
+    // class. `assertCaslCouplingInvariant` is the load-bearing safety
+    // check that fails LOUDLY at construction time instead.
     const baseCan = this.can;
     const baseCannot = this.cannot;
+    const baseBuild = this.build;
+    assertCaslCouplingInvariant({
+      can: baseCan,
+      cannot: baseCannot,
+      build: baseBuild,
+    });
 
     // We splat `args` into the captured base methods rather than typing this
     // wrapper against `AddRule<T>`'s heavy overload set — TS narrows the
@@ -142,10 +157,8 @@ export class TenantAbilityBuilder<
       cannot: wrapCrossTenant(baseCannot),
     };
 
-    // CASL declares `build` as an instance field too; we wrap it identically
-    // to `can`/`cannot` rather than via class inheritance so the validator
-    // runs even when consumers store the builder behind the parent type.
-    const baseBuild = this.build;
+    // Wrap `build` identically to `can`/`cannot` so the validator runs
+    // even when consumers store the builder behind the parent type.
     this.build = (options?: AbilityOptionsOf<TAbility>): TAbility => {
       if (this._opts.validateRules) {
         validateTenantRules(this.rules, {
@@ -213,7 +226,7 @@ export class TenantAbilityBuilder<
     const permissions = this._opts.permissions;
     const systemRoles = this._opts.systemRoles;
     if (!permissions || !systemRoles) {
-      throw new MultiTenantCaslError(
+      throw new NestWardenError(
         'applyRoles() requires both `permissions` and `systemRoles` to be provided in ' +
           'TenantBuilderOptions. Pass them via definePermissions(...) and defineRoles(...).',
       );
@@ -318,4 +331,47 @@ function markLastRuleCrossTenant(rules: ReadonlyArray<unknown>): void {
   if (lastRule && typeof lastRule === 'object') {
     markCrossTenant(lastRule);
   }
+}
+
+/**
+ * Asserts that CASL's `AbilityBuilder` constructor still assigns
+ * `can`, `cannot`, and `build` as **instance properties** (not
+ * prototype methods). `TenantAbilityBuilder` captures these instance
+ * methods after `super()` and wraps them to inject the tenant
+ * predicate; if a future CASL release moves them to the prototype,
+ * the captures would be `undefined` and the wraps would silently
+ * no-op — shipping rules without a tenant predicate, which is a
+ * data-leak class.
+ *
+ * Called from `TenantAbilityBuilder`'s constructor. Exported so the
+ * contract is testable from outside and so a future regression
+ * (e.g., removing the call) fails loudly under the existing test
+ * suite.
+ *
+ * @throws {NestWardenError} when any of the three captured references
+ *   is not a function — typically the signal that the installed
+ *   `@casl/ability` version has refactored its `AbilityBuilder`
+ *   internals in a way that breaks nest-warden's wrap technique.
+ *   nest-warden requires `@casl/ability` >=6.7.0 <7.0.0.
+ */
+export function assertCaslCouplingInvariant(captured: {
+  can: unknown;
+  cannot: unknown;
+  build: unknown;
+}): void {
+  const missing: string[] = [];
+  if (typeof captured.can !== 'function') missing.push('can');
+  if (typeof captured.cannot !== 'function') missing.push('cannot');
+  if (typeof captured.build !== 'function') missing.push('build');
+  if (missing.length === 0) return;
+
+  throw new NestWardenError(
+    `Incompatible @casl/ability version: AbilityBuilder no longer ` +
+      `assigns ${missing.map((m) => `\`${m}\``).join(', ')} as instance ` +
+      `properties after construction. nest-warden's tenant-predicate ` +
+      `injection wraps these instance methods, so a CASL refactor that ` +
+      `moves them to the prototype would silently produce rules without ` +
+      `a tenant predicate — a data-leak class. Pin @casl/ability to a ` +
+      `compatible release: >=6.7.0 <7.0.0.`,
+  );
 }

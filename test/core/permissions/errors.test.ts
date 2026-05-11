@@ -1,14 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import {
-  MultiTenantCaslError,
+  NestWardenError,
   SystemRoleCollisionError,
   UnknownPermissionError,
 } from '../../../src/core/errors.js';
 
 describe('UnknownPermissionError', () => {
-  it('extends MultiTenantCaslError', () => {
+  it('extends NestWardenError', () => {
     const err = new UnknownPermissionError('admin', 'merchants:typo');
-    expect(err).toBeInstanceOf(MultiTenantCaslError);
+    expect(err).toBeInstanceOf(NestWardenError);
     expect(err).toBeInstanceOf(Error);
   });
 
@@ -32,9 +32,9 @@ describe('UnknownPermissionError', () => {
 });
 
 describe('SystemRoleCollisionError', () => {
-  it('extends MultiTenantCaslError', () => {
+  it('extends NestWardenError', () => {
     const err = new SystemRoleCollisionError('admin');
-    expect(err).toBeInstanceOf(MultiTenantCaslError);
+    expect(err).toBeInstanceOf(NestWardenError);
     expect(err).toBeInstanceOf(Error);
   });
 

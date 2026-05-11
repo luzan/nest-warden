@@ -7,7 +7,64 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-_No changes yet._
+### Added
+
+- **Theme 8A — CASL coupling invariant.** New exported function
+  `assertCaslCouplingInvariant({can, cannot, build})` in
+  `src/core/tenant-ability.builder.ts`. The `TenantAbilityBuilder`
+  constructor calls it right after capturing the three base methods
+  from `super()`, ensuring the wrap technique (which injects the
+  tenant predicate into every emitted rule) can't silently no-op
+  if a future `@casl/ability` release refactors `AbilityBuilder` to
+  put `can` / `cannot` / `build` on the prototype instead of as
+  instance properties. Throws a `NestWardenError` that names the
+  missing method(s) and the compatible peer-dep range so consumers
+  can diagnose at-a-glance.
+
+- **`NestWardenError` — renamed base error class.** Replaces
+  `MultiTenantCaslError` as the canonical base for every library
+  error. All nine subclasses (`CrossTenantViolationError`,
+  `MissingTenantContextError`, `UnsupportedOperatorError`,
+  `RelationshipNotDefinedError`, `InvalidRelationshipPathError`,
+  `RelationshipDepthExceededError`, `DuplicateRelationshipError`,
+  `UnknownPermissionError`, `SystemRoleCollisionError`) now extend
+  `NestWardenError`. Instances' `.name` property reads as
+  `'NestWardenError'`. Tests at `test/core/errors-rename.test.ts`
+  pin the rename contract end-to-end.
+
+### Changed
+
+- **Peer-dependency upper bound on `@casl/ability` made explicit.**
+  Bumped from `"^6.7.0"` to `">=6.7.0 <7.0.0"`. The semantic range
+  is the same — caret-prefixed `^6.x` already excludes 7.x — but the
+  explicit form documents the v1.0 contract: nest-warden's tenant
+  predicate injection is built against CASL 6.x's `AbilityBuilder`
+  internals, and crossing the major boundary requires the coupling
+  invariant (`assertCaslCouplingInvariant`) to be re-validated.
+
+### Deprecated
+
+- **`MultiTenantCaslError` is now a `@deprecated` alias for
+  `NestWardenError`.** Exported as both a value (`export const
+  MultiTenantCaslError = NestWardenError`) and a type (`export type
+  MultiTenantCaslError = NestWardenError`) so every existing
+  call-site — `catch (e instanceof MultiTenantCaslError)`, `class
+  MyError extends MultiTenantCaslError`, function signatures — keeps
+  compiling and behaving identically. The alias is the **same
+  constructor reference** (not a subclass), which is the only shape
+  that lets `instanceof` work symmetrically against errors thrown
+  with the new name. Slated for removal in v1.0; migrate by
+  find-and-replacing the identifier across your codebase.
+
+### Notes
+
+- Internal symbol-keyed metadata constants (`MTC_OPTIONS` injection
+  token, `:mtc_N` SQL parameter placeholders, `__mtCrossTenant`
+  rule marker) keep their `mt`-prefixed runtime values. They're
+  internal-only — consumers never see them — but changing the
+  `__mtCrossTenant` marker would be a runtime-protocol break for
+  any code that has been stamping it directly on rules. Defer
+  the cleanup to a later cycle.
 
 ## [0.2.0-alpha] - 2026-05-11
 
