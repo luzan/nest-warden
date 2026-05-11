@@ -7,6 +7,75 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+_No changes yet._
+
+## [0.2.0-alpha] - 2026-05-11
+
+### Added (0.2.0-alpha cycle)
+
+- **Roadmap reconciliation.** `docs/pages/docs/roadmap/things-to-do.md`
+  bumped to v0.2.0-alpha. "Where we are" now enumerates RFC 001 phases
+  A–E as shipped in 0.1.0-alpha; Theme 1 (Roles on top of PBAC) is
+  reframed from "future work" to "shipped, refining" with remaining
+  design questions queued for Phase F / v1.0; Theme 2 (Deeper example
+  coverage) bullets marked done where covered by existing E2E suites.
+
+- **Roadmap Theme 8 — library coupling + API freeze hardening.**
+  Captures the v1.0 blockers from the 2026-05 staff review: CASL
+  internal-coupling invariant + version-range tightening, options
+  surface grouping (`builder`/`tenant`/`roles`/`graph`), silent
+  role-dropouts surfaced via injectable Logger + opt-in flag,
+  `MultiTenantCaslError` rename to `NestWardenError` with deprecated
+  alias, and explicit documentation of supported tenancy models.
+
+- **Roadmap Theme 9 — scope discipline for v1.0.** Marks
+  `loadCustomRoles` and custom-role validation as candidates for
+  experimental status pending production soak; demotes
+  `RlsTransactionInterceptor` from a core export to a docs recipe;
+  notes the empty `test/integration/` and `test/e2e/` directories at
+  the library root for cleanup.
+
+- **Docs — supported tenancy models.** New "Supported tenancy models"
+  section in `/docs/get-started/why/` makes the
+  shared-database/shared-schema assumption explicit; schema-per-tenant
+  and database-per-tenant are not supported in v1.0.
+
+- **Example — payments module.** `examples/nestjs-app/src/payments/`
+  ships `PaymentsModule`, `PaymentsService`, and `PaymentsController`
+  with `GET /payments`, `GET /payments/:id`, `POST /payments/:id/capture`,
+  and `POST /payments/:id/refund` endpoints. Exercises the two-hop
+  `Payment → Merchant → Agent` relationship path end-to-end against
+  real Postgres.
+
+- **Example — common utilities.** `examples/nestjs-app/src/common/`
+  exposes a shared `resolvePagination` helper (used by both
+  `/merchants` and `/payments`) and an `@AnyOf(...handlers)`
+  decorator that composes `@CheckPolicies` as disjunction.
+
+- **Example — payment permissions and roles.** Permission registry
+  adds `payments:read`, `payments:capture` (with
+  `conditions: { status: 'authorized' }`), and `payments:refund`,
+  plus a `payment-approver` system role. `permissions.ts` adds an
+  inline `cautious-refunder` role demonstrating
+  `cannot('refund', 'Payment', { amountCents: { $gt: 10000 } })`.
+
+- **Example — 21 new E2E scenarios.** 16 payments tests covering
+  cross-tenant isolation, two-hop graph scoping, conditional state
+  transitions, negative-auth refund threshold, and forward-check /
+  reverse-lookup parity; 5 common tests covering shared pagination
+  invariants. Test count: 31 → 52.
+
+### Changed (0.2.0-alpha cycle)
+
+- **Library version bumped from `0.1.0` to `0.2.0-alpha`** to align
+  the package metadata with the alpha labeling used in the README,
+  docs site, and CLAUDE.md.
+
+- **Example services — `ORDER BY id` for paginated reads.** Seeding
+  rows in a single INSERT statement assigns identical `created_at`
+  timestamps to every row; the previous `ORDER BY created_at`
+  produced non-deterministic pagination. Documented inline.
+
 ### Added
 
 - **RFC 001 Phase A — typed permission/role registry primitives.**

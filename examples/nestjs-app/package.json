@@ -1,6 +1,6 @@
 {
   "name": "@nest-warden/example-nestjs-app",
-  "version": "0.1.0",
+  "version": "0.2.0-alpha",
   "private": true,
   "description": "Runnable MVP demonstrating nest-warden in a real NestJS + TypeORM + Postgres app, with RLS policies enforced at the database layer.",
   "type": "module",

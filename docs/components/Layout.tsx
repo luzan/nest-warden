@@ -37,7 +37,7 @@ export function Layout({ children, title }: LayoutProps): JSX.Element {
           nest-warden
         </Link>
         <div style={{ fontSize: '0.75rem', color: '#6b7280', marginBottom: '1.5rem' }}>
-          docs · v0.1.0-alpha
+          docs · v0.2.0-alpha
         </div>
         <nav>
           {sidebarSections.map((section) => (

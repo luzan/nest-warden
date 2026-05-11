@@ -2,7 +2,7 @@
 
 Tenant-aware authorization for NestJS + TypeORM, built on top of [`@casl/ability`](https://casl.js.org/).
 
-> **Status: 0.1.0-alpha — under active development.** API surface is stabilizing; do not use in production yet.
+> **Status: 0.2.0-alpha — under active development.** API surface is stabilizing; do not use in production yet.
 
 ## Why
 
