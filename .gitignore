@@ -30,3 +30,8 @@ pnpm-debug.log*
 .claude/projects/
 .claude/
 CLAUDE.md
+
+# Session-handoff scratchpad — read at the start of a session,
+# rewrite at the end. Never committed; CHANGELOG.md + the public
+# roadmap are the durable records.
+note.md
