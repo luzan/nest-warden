@@ -4,7 +4,7 @@ Tenant-aware authorization for NestJS + TypeORM, built on top of [`@casl/ability
 
 > **⚠️ Alpha / experimental — do not use in production yet.**
 >
-> `nest-warden` is **0.2.0-alpha**. The API surface is stabilizing but
+> `nest-warden` is **0.3.1-alpha**. The API surface is stabilizing but
 > remains subject to breaking changes between alpha releases. Names,
 > signatures, and module boundaries may shift before v1.0.
 >
@@ -13,7 +13,7 @@ Tenant-aware authorization for NestJS + TypeORM, built on top of [`@casl/ability
 > for at least one quarter" — plus the API freeze and library-coupling
 > hardening tracked in the [public roadmap](./docs/pages/docs/roadmap/things-to-do.md)
 > (Themes 4 and 8). Until then, treat every alpha release as
-> experimental and pin to an exact version (`"nest-warden": "0.2.0-alpha"`)
+> experimental and pin to an exact version (`"nest-warden": "0.3.1-alpha"`)
 > rather than a range.
 
 ## Why
@@ -23,7 +23,7 @@ Tenant-aware authorization for NestJS + TypeORM, built on top of [`@casl/ability
 1. **No first-class tenant primitive.** Forgetting `tenantId` in a rule's conditions silently leaks data across tenants.
 2. **No graph-relationship traversal.** Rules like *"Alice is an agent of Merchant M of Tenant X → Alice can approve M's payments"* can't be expressed without denormalization or pre-flight queries.
 3. **No TypeORM adapter for reverse lookups.** CASL ships official adapters only for `@casl/mongoose` and `@casl/prisma`. The single SQL adapter is Prisma — TypeORM users get nothing. CASL also can't answer *"which Ys can Alice access?"* without loading them all and filtering — O(n) DB I/O.
-4. **Underspecified conditional authorization.** Hand-rolled condition translators (a common pattern in CASL consumers) silently drop conditions when the translator is wrong — e.g., emitting `{ equals: value }` instead of MongoDB's `{ $eq: value }` produces a rule that matches everything, with no error at runtime.
+4. **Underspecified conditional authorization.** Hand-rolled condition translators (a common pattern in CASL consumers without an official `@casl/typeorm`) can produce wrong-shape rules that CASL accepts without complaint. CASL's `ObjectQueryParser` silently reinterprets unknown operator keys as field names; the resulting rule either never matches (`ability.can(...)` fails closed) or — in hand-rolled `accessibleBy()` adapters that drop unknown keys when assembling a WHERE clause — returns every row (silent permission escalation). Runnable repro: [`examples/casl-conditions-demo`](./examples/casl-conditions-demo).
 
 `nest-warden` closes all four gaps as a thin layer above CASL.
 

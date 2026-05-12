@@ -114,7 +114,7 @@ practice consumers often write hand-rolled translators that introduce
 subtle bugs. A representative pattern that's bitten real codebases:
 
 ```ts
-// Buggy translator — silently drops conditions
+// Buggy translator — emits an unrecognised operator key
 private translateCondition(cond: any): MongoQuery {
   if (cond.StringEquals) {
     Object.entries(cond.StringEquals).forEach(([f, v]) => {
@@ -125,16 +125,41 @@ private translateCondition(cond: any): MongoQuery {
 }
 ```
 
-Since `{ equals: value }` doesn't match any Mongo operator, the
-condition silently does nothing. Every policy with conditions becomes
-"match everything."
+CASL doesn't error on this. Its `ObjectQueryParser` walks the
+conditions object key-by-key; if a key isn't a registered operator
+(e.g. `$eq`, `$in`), the parser falls back to treating it as a
+**field name** and the value as the right-hand side of the default
+operator. The misspelt rule compiles and runs without complaint.
+
+What happens next depends on which side of CASL you're on:
+
+- **Forward check (`ability.can(subject)`)** — fails *closed*. The
+  matcher compares `subject.status` (a string) to the literal object
+  `{ equals: 'value' }`, always returns `false`, and the rule never
+  grants access. Annoying but visible: users open tickets when
+  permissions disappear.
+- **Reverse lookup (`accessibleBy(...)`) through a hand-rolled
+  adapter** — fails *open* in the unsafe case. The CASL-shipped
+  adapters (`@casl/prisma`, `@casl/mongoose`) tend to throw on
+  unknown shapes, but consumer-written SQL/TypeORM/Drizzle adapters
+  — common because no official `@casl/typeorm` exists — frequently
+  drop unknown operators when assembling a WHERE clause. The rule's
+  conditions collapse to "no filter" and **every row** is returned.
+  Silent permission *escalation*; no ticket because the UI looks
+  fine.
+
+A runnable 7-case repro is at
+[`examples/casl-conditions-demo`](https://github.com/luzan/nest-warden/tree/main/examples/casl-conditions-demo);
+it also documents an asymmetry inside CASL itself — Prisma's `equals`
+instruction validates and rejects object/array RHS, while Mongo's
+`$eq` has no `validate()` at all.
 
 **nest-warden's fix.** Conditions go through CASL's own
 `mongoQueryMatcher` directly — no hand-rolled translator. The TypeORM
-compiler `accessibleBy()` validates supported operators at compile time
-and throws `UnsupportedOperatorError` for anything outside the
-documented set. **Silent drops are impossible** because every operator
-is either compiled or rejected.
+compiler `accessibleBy()` validates supported operators at compile
+time and throws `UnsupportedOperatorError` for anything outside the
+documented set. **Silent drops are impossible** because every
+operator is either compiled or rejected.
 
 ## Where this *doesn't* compete
 
