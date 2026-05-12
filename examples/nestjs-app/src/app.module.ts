@@ -61,10 +61,6 @@ void (null as unknown as ForbiddenException); // type-only retain
       imports: [TypeOrmModule.forFeature([CustomRole])],
       inject: [getRepositoryToken(CustomRole)],
       useFactory: (customRolesRepo: Repository<CustomRole>) => ({
-        tenantField: 'tenantId',
-        graph: relationshipGraph,
-        permissions,
-        systemRoles,
         // The request comes pre-authenticated by `JwtAuthGuard`, which
         // verified the token signature, freshness, and the
         // server-side membership before setting `request.user`. The
@@ -85,19 +81,29 @@ void (null as unknown as ForbiddenException); // type-only retain
             roles: user.roles,
           };
         },
-        // Tenant-managed custom roles. Library invokes once per
-        // request, validates names against system roles + permission
-        // refs, and silently drops misconfigured rows (with a
-        // console.warn).
-        loadCustomRoles: async (tenantId) => {
-          const rows = await customRolesRepo.find({ where: { tenantId } });
-          return rows.map((r) => ({
-            name: r.name,
-            description: r.description ?? undefined,
-            permissions: r.permissions,
-          }));
-        },
         defineAbilities,
+        builder: { tenantField: 'tenantId' },
+        graph: relationshipGraph,
+        // `permissions` is intentionally NOT under `roles` — it's the
+        // shared vocabulary that roles, custom roles, and any future
+        // composer (user-level grants, group permissions, …)
+        // reference. See JSDoc on `TenantAbilityModuleOptions`.
+        permissions,
+        roles: {
+          systemRoles,
+          // Tenant-managed custom roles. Library invokes once per
+          // request, validates names against system roles + permission
+          // refs, and silently drops misconfigured rows through the
+          // configured logger (defaults to NestJS `Logger`).
+          loadCustomRoles: async (tenantId) => {
+            const rows = await customRolesRepo.find({ where: { tenantId } });
+            return rows.map((r) => ({
+              name: r.name,
+              description: r.description ?? undefined,
+              permissions: r.permissions,
+            }));
+          },
+        },
       }),
     }),
     MerchantsModule,

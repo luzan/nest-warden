@@ -55,11 +55,11 @@ describe('TenantAbilityModule.forRoot', () => {
     expect(tokens).toContain(APP_GUARD);
   });
 
-  it('skips global registration when registerAsGlobal: false', () => {
+  it('skips global registration when module.registerAsGlobal: false', () => {
     const dynamic = TenantAbilityModule.forRoot({
       resolveTenantContext: () => ctx,
       defineAbilities: () => {},
-      registerAsGlobal: false,
+      module: { registerAsGlobal: false },
     });
     const tokens = (dynamic.providers ?? [])
       .map((p) => (typeof p === 'object' && p !== null && 'provide' in p ? p.provide : null))

@@ -47,7 +47,7 @@ describe('TenantAbilityFactory', () => {
       defineAbilities: (builder) => {
         builder.can('read', 'Merchant');
       },
-      abilityClass: createMongoAbility,
+      builder: { abilityClass: createMongoAbility },
     });
     svc.set(ctx);
 
@@ -63,7 +63,7 @@ describe('TenantAbilityFactory', () => {
         captured = request;
         builder.can('read', 'Merchant');
       },
-      abilityClass: createMongoAbility,
+      builder: { abilityClass: createMongoAbility },
     });
     svc.set(ctx);
 
@@ -80,13 +80,13 @@ describe('TenantAbilityFactory', () => {
     await expect(factory.build()).rejects.toThrow(/before TenantContextInterceptor ran/);
   });
 
-  it('honors validateRulesAtBuild = false (escape hatch)', async () => {
+  it('honors builder.validateRules = false (escape hatch)', async () => {
     const { factory, svc } = build({
       resolveTenantContext: () => ctx,
       defineAbilities: (builder) => {
         builder.rules.push({ action: 'read', subject: 'Merchant' });
       },
-      validateRulesAtBuild: false,
+      builder: { validateRules: false },
     });
     svc.set(ctx);
     await expect(factory.build()).resolves.toBeDefined();
@@ -139,7 +139,7 @@ describe('TenantAbilityFactory', () => {
     const { factory, svc } = build({
       resolveTenantContext: () => ctx,
       permissions,
-      systemRoles,
+      roles: { systemRoles },
       defineAbilities: (builder, c) => {
         builder.applyRoles(c.roles.includes('reader') ? ['reader'] : []);
       },
@@ -169,10 +169,12 @@ describe('TenantAbilityFactory', () => {
       const { factory, svc } = build({
         resolveTenantContext: () => ctx,
         permissions,
-        systemRoles,
-        loadCustomRoles: () => {
-          calls += 1;
-          return [{ name: 'auditor', permissions: ['merchants:read'] }];
+        roles: {
+          systemRoles,
+          loadCustomRoles: () => {
+            calls += 1;
+            return [{ name: 'auditor', permissions: ['merchants:read'] }];
+          },
         },
         defineAbilities: (builder, c) => {
           builder.applyRoles(c.roles);
@@ -192,11 +194,13 @@ describe('TenantAbilityFactory', () => {
       const { factory, svc } = build({
         resolveTenantContext: () => ctx,
         permissions,
-        systemRoles,
-        loadCustomRoles: (tenantId, c) => {
-          seen.tenantId = tenantId;
-          seen.subjectId = c.subjectId;
-          return [];
+        roles: {
+          systemRoles,
+          loadCustomRoles: (tenantId, c) => {
+            seen.tenantId = tenantId;
+            seen.subjectId = c.subjectId;
+            return [];
+          },
         },
         defineAbilities: () => {},
       });
@@ -216,7 +220,9 @@ describe('TenantAbilityFactory', () => {
       const seen: { customRoles?: readonly { name: string }[] } = {};
       const { factory, svc } = build({
         resolveTenantContext: () => ctx,
-        loadCustomRoles: () => [{ name: 'unvalidated', permissions: ['anything-goes'] }],
+        roles: {
+          loadCustomRoles: () => [{ name: 'unvalidated', permissions: ['anything-goes'] }],
+        },
         defineAbilities: (builder) => {
           // Capture the customRoles the factory passed to the builder
           // by reading the builder's options indirectly through its
@@ -238,10 +244,12 @@ describe('TenantAbilityFactory', () => {
       const { factory, svc } = build({
         resolveTenantContext: () => ctx,
         permissions,
-        systemRoles,
-        loadCustomRoles: async () => {
-          await new Promise((r) => setTimeout(r, 1));
-          return [{ name: 'late-binder', permissions: ['merchants:read'] }];
+        roles: {
+          systemRoles,
+          loadCustomRoles: async () => {
+            await new Promise((r) => setTimeout(r, 1));
+            return [{ name: 'late-binder', permissions: ['merchants:read'] }];
+          },
         },
         defineAbilities: (builder) => builder.applyRoles(['late-binder']),
       });
@@ -257,12 +265,14 @@ describe('TenantAbilityFactory', () => {
       const { factory, svc } = build({
         resolveTenantContext: () => ctx,
         permissions,
-        systemRoles,
-        logger,
-        loadCustomRoles: () => [
-          { name: 'admin', permissions: ['merchants:read'] }, // collides
-          { name: 'good-custom', permissions: ['merchants:read'] },
-        ],
+        roles: {
+          systemRoles,
+          logger,
+          loadCustomRoles: () => [
+            { name: 'admin', permissions: ['merchants:read'] }, // collides
+            { name: 'good-custom', permissions: ['merchants:read'] },
+          ],
+        },
         defineAbilities: (builder, c) => builder.applyRoles(c.roles),
       });
       svc.set({ ...ctx, roles: ['admin', 'good-custom'] });
@@ -280,12 +290,14 @@ describe('TenantAbilityFactory', () => {
       const { factory, svc } = build({
         resolveTenantContext: () => ctx,
         permissions,
-        systemRoles,
-        logger,
-        loadCustomRoles: () => [
-          { name: 'broken', permissions: ['merchants:read', 'does-not-exist'] },
-          { name: 'fine', permissions: ['merchants:read'] },
-        ],
+        roles: {
+          systemRoles,
+          logger,
+          loadCustomRoles: () => [
+            { name: 'broken', permissions: ['merchants:read', 'does-not-exist'] },
+            { name: 'fine', permissions: ['merchants:read'] },
+          ],
+        },
         defineAbilities: (builder) => builder.applyRoles(['broken', 'fine']),
       });
       svc.set(ctx);
@@ -313,9 +325,11 @@ describe('TenantAbilityFactory', () => {
         const { factory, svc } = build({
           resolveTenantContext: () => ctx,
           permissions,
-          systemRoles,
-          logger,
-          loadCustomRoles: () => [{ name: 'admin', permissions: ['merchants:read'] }], // collides
+          roles: {
+            systemRoles,
+            logger,
+            loadCustomRoles: () => [{ name: 'admin', permissions: ['merchants:read'] }], // collides
+          },
           defineAbilities: (builder) => builder.applyRoles(['admin']),
         });
         svc.set(ctx);
@@ -329,19 +343,21 @@ describe('TenantAbilityFactory', () => {
       }
     });
 
-    it('respects silentRoleDropouts: true — the dropout still happens but the log is suppressed', async () => {
+    it('respects roles.silentDropouts: true — the dropout still happens but the log is suppressed', async () => {
       const { logger, messages } = captureLogger();
 
       const { factory, svc } = build({
         resolveTenantContext: () => ctx,
         permissions,
-        systemRoles,
-        logger,
-        silentRoleDropouts: true,
-        loadCustomRoles: () => [
-          { name: 'admin', permissions: ['merchants:read'] }, // collides
-          { name: 'good-custom', permissions: ['merchants:read'] },
-        ],
+        roles: {
+          systemRoles,
+          logger,
+          silentDropouts: true,
+          loadCustomRoles: () => [
+            { name: 'admin', permissions: ['merchants:read'] }, // collides
+            { name: 'good-custom', permissions: ['merchants:read'] },
+          ],
+        },
         defineAbilities: (builder, c) => builder.applyRoles(c.roles),
       });
       svc.set({ ...ctx, roles: ['admin', 'good-custom'] });
@@ -362,8 +378,10 @@ describe('TenantAbilityFactory', () => {
       const { factory, svc } = build({
         resolveTenantContext: () => ctx,
         permissions,
-        systemRoles,
-        loadCustomRoles: () => [{ name: 'admin', permissions: ['merchants:read'] }], // collides
+        roles: {
+          systemRoles,
+          loadCustomRoles: () => [{ name: 'admin', permissions: ['merchants:read'] }], // collides
+        },
         defineAbilities: (builder) => builder.applyRoles(['admin']),
       });
       svc.set(ctx);
@@ -375,7 +393,7 @@ describe('TenantAbilityFactory', () => {
       const { factory, svc } = build({
         resolveTenantContext: () => ctx,
         permissions,
-        systemRoles,
+        roles: { systemRoles },
         defineAbilities: (builder) => builder.applyRoles(['ghost']),
       });
       svc.set(ctx);

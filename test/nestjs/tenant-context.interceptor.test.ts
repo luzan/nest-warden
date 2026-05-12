@@ -86,12 +86,12 @@ describe('TenantContextInterceptor', () => {
     expect(svc.has()).toBe(false);
   });
 
-  it('skips resolution when the configured isPublic predicate returns true', async () => {
+  it('skips resolution when the configured module.isPublic predicate returns true', async () => {
     const resolve = vi.fn();
     const { interceptor, svc } = build({
       resolveTenantContext: resolve,
       defineAbilities: () => {},
-      isPublic: () => true,
+      module: { isPublic: () => true },
     });
 
     await firstValueFrom(await interceptor.intercept(fakeExecCtx(), fakeNext()));

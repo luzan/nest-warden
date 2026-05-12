@@ -76,7 +76,7 @@ export class TenantContextInterceptor<
       executionContext.getClass(),
     ]);
     if (isPublic === true) return true;
-    if (this.options.isPublic?.(executionContext) === true) return true;
+    if (this.options.module?.isPublic?.(executionContext) === true) return true;
     return false;
   }
 }

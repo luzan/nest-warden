@@ -44,9 +44,6 @@ import { defineAbilities, type AppAbility } from './auth/permissions';
 @Module({
   imports: [
     TenantAbilityModule.forRoot<AppAbility>({
-      // Field name on resources that carries the tenant FK. Default 'tenantId'.
-      tenantField: 'tenantId',
-
       // Server-side resolution — see callout below.
       resolveTenantContext: async (req) => {
         const user = (req as { user: JwtPayload }).user;
@@ -66,8 +63,15 @@ import { defineAbilities, type AppAbility } from './auth/permissions';
       // Define per-request rules.
       defineAbilities,
 
-      // Optional: relationship graph for $relatedTo rules.
+      // Optional: the shared permission vocabulary, referenced by
+      // roles and any future composer (user-level grants, etc.).
+      permissions,
+
+      // Optional groups — omit any group to take the defaults.
+      builder: { tenantField: 'tenantId' },
+      roles: { systemRoles, loadCustomRoles },
       graph: relationshipGraph,
+      module: { registerAsGlobal: true },
     }),
     // ... other modules
   ],
@@ -195,35 +199,69 @@ constructor(
 
 ## Module options reference
 
+The options surface groups related fields under `builder`, `roles`,
+and `module` sub-objects. The two required callbacks
+(`defineAbilities`, `resolveTenantContext`) and the foundational
+`permissions` registry stay at the top level. See the 0.5.0-alpha
+CHANGELOG for the complete before/after mapping if you're migrating
+from 0.4.x.
+
 ```ts
 interface TenantAbilityModuleOptions<TAbility, TId extends TenantIdValue = string> {
-  /** Resource field carrying the tenant ID. Default: 'tenantId'. */
-  tenantField?: string;
+  // Required callbacks ─────────────────────────────────────────────────
 
-  /** CASL ability factory or class. Default: createMongoAbility. */
-  abilityClass?: AbilityClass<TAbility> | CreateAbility<TAbility>;
-
-  /** Resolve the canonical TenantContext from a request. Server-side lookup. */
-  resolveTenantContext: (req: unknown) => TenantContext<TId> | Promise<TenantContext<TId>>;
-
-  /** Define rules for the resolved context. May be async. */
+  /** Define rules for the resolved context (per request). May be async. */
   defineAbilities: (
     builder: TenantAbilityBuilder<TAbility, TId>,
     ctx: TenantContext<TId>,
     req: unknown,
   ) => void | Promise<void>;
 
+  /** Resolve the canonical TenantContext from a request. Server-side lookup. */
+  resolveTenantContext: (req: unknown) => TenantContext<TId> | Promise<TenantContext<TId>>;
+
+  // Foundational vocabulary ────────────────────────────────────────────
+
+  /**
+   * Permission registry. Referenced by `roles.systemRoles`,
+   * `roles.loadCustomRoles`, and any future composer (user-level
+   * grants, group permissions, …). Intentionally top-level rather
+   * than nested under `roles`.
+   */
+  permissions?: PermissionRegistry;
+
+  // Optional config groups ─────────────────────────────────────────────
+
+  /** How the per-request TenantAbilityBuilder is constructed. */
+  builder?: {
+    /** Resource field carrying the tenant ID. Default: 'tenantId'. */
+    tenantField?: string;
+    /** CASL ability factory or class. Default: createMongoAbility. */
+    abilityClass?: AbilityClass<TAbility> | CreateAbility<TAbility>;
+    /** Run validateTenantRules at .build() time. Default: true. */
+    validateRules?: boolean;
+  };
+
+  /** Role registries + custom-role loader (RFC 001). */
+  roles?: {
+    systemRoles?: RoleRegistry;
+    loadCustomRoles?: (tenantId, ctx) => readonly CustomRoleEntry[] | Promise<...>;
+    /** Logger for custom-role dropouts. Defaults to NestJS Logger. */
+    logger?: LoggerService;
+    /** Suppress per-request dropout logs. Default: false. */
+    silentDropouts?: boolean;
+  };
+
   /** Optional relationship graph; required for $relatedTo rules. */
   graph?: RelationshipGraph;
 
-  /** Run validateTenantRules at .build() time. Default: true. */
-  validateRulesAtBuild?: boolean;
-
-  /** Predicate for non-decorator-marked public routes. */
-  isPublic?: (ctx: ExecutionContext) => boolean;
-
-  /** Auto-register the global APP_GUARD + APP_INTERCEPTOR. Default: true. */
-  registerAsGlobal?: boolean;
+  /** NestJS module wiring. */
+  module?: {
+    /** Predicate for non-decorator-marked public routes. */
+    isPublic?: (ctx: ExecutionContext) => boolean;
+    /** Auto-register the global APP_GUARD + APP_INTERCEPTOR. Default: true. */
+    registerAsGlobal?: boolean;
+  };
 }
 ```
 
