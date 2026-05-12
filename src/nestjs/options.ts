@@ -13,35 +13,71 @@ import type { RelationshipGraph } from '../core/relationships/graph.js';
 /**
  * Options accepted by `TenantAbilityModule.forRoot()`.
  *
- * The module is intentionally generic in both the ability type and the
- * tenant ID type so applications get end-to-end IDE support for their own
+ * The module is generic in both the ability type and the tenant ID
+ * type so applications get end-to-end IDE support for their own
  * action / subject vocabularies.
  *
- * @typeParam TAbility - The application's CASL ability type (commonly
- *   `MongoAbility<[Action, Subject]>`).
- * @typeParam TId - The runtime type of `tenantId` — `string` (UUID) or
- *   `number` (integer PK). Defaults to `string`.
+ * **0.5.0-alpha shape (Theme 8B).** The options surface has been
+ * restructured for v1.0 readiness. Top-level fields fall into
+ * three tiers:
+ *
+ *   1. **Required callbacks** — `defineAbilities` and
+ *      `resolveTenantContext`. These ARE the contract.
+ *   2. **Foundational vocabulary** — `permissions`. The permission
+ *      registry is intentionally NOT nested under `roles` because
+ *      roles are only ONE way to compose permissions; future
+ *      composers (user-level grants, group/department permissions,
+ *      attribute-based overrides) would all reference the same
+ *      registry. Putting it under `roles` would imply it's
+ *      role-exclusive — which it isn't.
+ *   3. **Optional config groups** — each grouped sub-object scopes
+ *      a related concern:
+ *      - `builder` — how the per-request `TenantAbilityBuilder` is
+ *        constructed (tenant field name, ability class, rule
+ *        validation).
+ *      - `roles` — role registries and the custom-role loader
+ *        (RFC 001 Phase C). One consumer of `permissions`.
+ *      - `graph` — relationship graph for `$relatedTo` (kept flat
+ *        because it's a single instance, not a config bag).
+ *      - `module` — NestJS module wiring (isPublic, global
+ *        registration).
+ *
+ * See the 0.5.0-alpha CHANGELOG for the complete before/after
+ * mapping if you're migrating from 0.4.x.
+ *
+ * @typeParam TAbility - The application's CASL ability type
+ *   (commonly `MongoAbility<[Action, Subject]>`).
+ * @typeParam TId - The runtime type of `tenantId` — `string` (UUID)
+ *   or `number` (integer PK). Defaults to `string`.
  */
 export interface TenantAbilityModuleOptions<
   TAbility extends AnyAbility = AnyAbility,
   TId extends TenantIdValue = string,
 > {
-  /** Resource field that carries the tenant ID. Default: `tenantId`. */
-  readonly tenantField?: string;
+  // ── Required callbacks ─────────────────────────────────────────────
 
   /**
-   * The CASL ability class or factory used to instantiate per-request
-   * abilities. Defaults to `createMongoAbility`. Override to plug in a
-   * `PureAbility` (no in-memory matching) or a custom subclass.
+   * Imperatively define the rules for the resolved context. Called
+   * once per request. The provided builder is pre-bound to the
+   * context's `tenantId`, so every `can()` / `cannot()` call
+   * automatically pins the tenant predicate. Use
+   * `builder.crossTenant.*` for explicit cross-tenant rules.
+   *
+   * The function may be sync or return a Promise — useful when role
+   * permissions need to be loaded from a database.
    */
-  readonly abilityClass?: AbilityClass<TAbility> | CreateAbility<TAbility>;
+  readonly defineAbilities: (
+    builder: TenantAbilityBuilder<TAbility, TId>,
+    context: TenantContext<TId>,
+    request: unknown,
+  ) => void | Promise<void>;
 
   /**
    * Resolver invoked once per authenticated request to produce the
    * request-scoped {@link TenantContext}. The return value MUST come
-   * from a server-side membership lookup, NOT from a client-supplied JWT
-   * claim — the library cannot enforce this, but it's the security
-   * contract.
+   * from a server-side membership lookup, NOT from a client-supplied
+   * JWT claim — the library cannot enforce this, but it's the
+   * security contract.
    *
    * @example
    *   resolveTenantContext: async (req) => {
@@ -57,145 +93,155 @@ export interface TenantAbilityModuleOptions<
     request: unknown,
   ) => TenantContext<TId> | Promise<TenantContext<TId>>;
 
-  /**
-   * Imperatively define the rules for the resolved context. Called once
-   * per request. The provided builder is pre-bound to the context's
-   * `tenantId`, so every `can()` / `cannot()` call automatically pins the
-   * tenant predicate. Use `builder.crossTenant.*` for explicit cross-
-   * tenant rules.
-   *
-   * The function may be sync or return a Promise — useful when role
-   * permissions need to be loaded from a database.
-   */
-  readonly defineAbilities: (
-    builder: TenantAbilityBuilder<TAbility, TId>,
-    context: TenantContext<TId>,
-    request: unknown,
-  ) => void | Promise<void>;
+  // ── Foundational vocabulary ───────────────────────────────────────
 
   /**
-   * Optional relationship graph passed to the per-request ability. The
-   * graph is shared across requests and built once at module bootstrap.
-   * Required only when rules use `$relatedTo`.
+   * Permission registry produced by `definePermissions()`. The shared
+   * vocabulary of "what actions can be performed against what
+   * subjects." Required only if you intend to use
+   * {@link TenantAbilityBuilder.applyRoles} inside `defineAbilities`,
+   * OR to validate any other permission-composing surface (custom
+   * roles loaded at request time, future user-level overrides, etc.).
+   *
+   * Intentionally at top level rather than nested under `roles`:
+   * roles are only ONE composer of permissions. Future composers
+   * (user-level grants, group/department permissions, attribute-
+   * based overrides) would all reference this same registry. Putting
+   * it under `roles` would mislead implementers into thinking it's
+   * role-exclusive.
+   *
+   * RFC 001 Phase B; the library forwards this verbatim to the
+   * per-request builder so `applyRoles` can resolve names against it.
+   */
+  readonly permissions?: PermissionRegistry;
+
+  // ── Grouped configuration ─────────────────────────────────────────
+
+  /**
+   * How the per-request {@link TenantAbilityBuilder} is constructed.
+   * Every field is optional; omit the entire group to take the
+   * defaults.
+   */
+  readonly builder?: {
+    /** Resource field that carries the tenant ID. Default: `tenantId`. */
+    readonly tenantField?: string;
+
+    /**
+     * The CASL ability class or factory used to instantiate per-request
+     * abilities. Defaults to `createMongoAbility`. Override to plug in
+     * a `PureAbility` (no in-memory matching) or a custom subclass.
+     */
+    readonly abilityClass?: AbilityClass<TAbility> | CreateAbility<TAbility>;
+
+    /**
+     * Run `validateTenantRules` at `.build()` time. Default: `true`.
+     * Setting this to `false` is intentionally undocumented in the
+     * README — it exists for library-internal tests of the bypass
+     * path. Leave it on in production.
+     *
+     * **Renamed from `validateRulesAtBuild` in 0.5.0-alpha** — the
+     * `builder` group prefix made "AtBuild" redundant.
+     */
+    readonly validateRules?: boolean;
+  };
+
+  /**
+   * Role registries, tenant-managed custom-role loader, and
+   * logging knobs (RFC 001 Phase C). One specific composer of
+   * `permissions` (the top-level field). Every field is optional;
+   * omit the entire group if you don't use registry-driven roles.
+   */
+  readonly roles?: {
+    /**
+     * System role registry produced by `defineRoles()`. Required
+     * only if you intend to use
+     * {@link TenantAbilityBuilder.applyRoles}. Coexists cleanly with
+     * raw `builder.can(...)` calls in `defineAbilities`; both styles
+     * can appear in the same callback.
+     */
+    readonly systemRoles?: RoleRegistry;
+
+    /**
+     * Tenant-managed custom roles loaded once per request.
+     *
+     * @experimental
+     * The shape of `CustomRoleEntry`, the validation error vocabulary
+     * (`UnknownPermissionError` / `SystemRoleCollisionError`), and the
+     * fail-closed dropout policy may change before v1.0. See Theme 9
+     * in the roadmap. Pin to an exact version of `nest-warden` if you
+     * depend on this option.
+     *
+     * @example
+     *   roles: {
+     *     loadCustomRoles: async (tenantId, ctx) => {
+     *       const rows = await this.customRolesRepo.find({
+     *         where: { tenantId },
+     *       });
+     *       return rows.map((r) => ({
+     *         name: r.name,
+     *         permissions: r.permissions,
+     *         description: r.description,
+     *       }));
+     *     }
+     *   }
+     */
+    readonly loadCustomRoles?: (
+      tenantId: TId,
+      context: TenantContext<TId>,
+    ) => readonly CustomRoleEntry[] | Promise<readonly CustomRoleEntry[]>;
+
+    /**
+     * Logger used by the per-request factory to report custom-role
+     * dropouts (Theme 8E). Accepts any {@link LoggerService} — the
+     * NestJS-provided `Logger`, a Pino adapter, a Winston wrapper, a
+     * test capture, etc.
+     *
+     * When omitted, the factory falls back to
+     * `new Logger('TenantAbilityFactory')` which honours the
+     * application's global NestJS log-level configuration.
+     */
+    readonly logger?: LoggerService;
+
+    /**
+     * When `true`, suppress the per-request log calls for custom-role
+     * dropouts (collisions with system roles and unknown-permission
+     * references). Defaults to `false` — dropouts are logged.
+     *
+     * **Renamed from `silentRoleDropouts` in 0.5.0-alpha** — the
+     * `roles` group prefix made "Role" redundant.
+     */
+    readonly silentDropouts?: boolean;
+  };
+
+  /**
+   * Optional relationship graph passed to the per-request ability.
+   * The graph is shared across requests and built once at module
+   * bootstrap. Required only when rules use `$relatedTo`.
+   *
+   * Stays flat (not wrapped) because it's a single instance, not a
+   * config bag — wrapping would just be `graph: { graph: ... }`.
    */
   readonly graph?: RelationshipGraph;
 
   /**
-   * Permission registry produced by `definePermissions()`. Optional —
-   * supply only if you intend to use {@link TenantAbilityBuilder.applyRoles}
-   * inside `defineAbilities`. RFC 001 Phase B; the library forwards
-   * this verbatim to the per-request builder.
+   * NestJS module wiring. Every field is optional; omit the entire
+   * group to take the defaults.
    */
-  readonly permissions?: PermissionRegistry;
+  readonly module?: {
+    /**
+     * Predicate identifying routes that are public (no auth, no tenant
+     * context, no policy check). When omitted, the guard relies on
+     * the `@Public()` decorator alone.
+     */
+    readonly isPublic?: (context: ExecutionContext) => boolean;
 
-  /**
-   * System role registry produced by `defineRoles()`. Optional —
-   * supply only if you intend to use {@link TenantAbilityBuilder.applyRoles}.
-   * Coexists cleanly with raw `builder.can(...)` calls in
-   * `defineAbilities`; both styles can appear in the same callback.
-   */
-  readonly systemRoles?: RoleRegistry;
-
-  /**
-   * Tenant-managed custom roles loaded once per request. RFC 001
-   * Phase C — the bridge for non-technical tenant admins to compose
-   * permissions through a UI without redeploying the application.
-   *
-   * @experimental
-   * The shape of `CustomRoleEntry`, the validation error vocabulary
-   * (`UnknownPermissionError` / `SystemRoleCollisionError`), and the
-   * fail-closed dropout policy may change before v1.0. See Theme 9
-   * in the roadmap: https://github.com/luzan/nest-warden/blob/main/docs/pages/docs/roadmap/things-to-do.md#4b-scope-discipline-for-v10-theme-9
-   * If the API churns more than expected after production soak, the
-   * whole tenant-managed-roles surface may be extracted into a
-   * companion package post-v1.0. Pin to an exact version of
-   * `nest-warden` if you depend on this option.
-   *
-   * The callback runs after `resolveTenantContext` and before
-   * `defineAbilities`. The library memoizes the result per request,
-   * so calling `applyRoles` multiple times in `defineAbilities`
-   * doesn't re-fire the callback.
-   *
-   * Validation is fail-closed:
-   *
-   *   - Custom roles whose `name` collides with a system role are
-   *     silently dropped from the request's role set (the system
-   *     role takes precedence).
-   *   - Custom roles referencing unknown permissions are silently
-   *     dropped from the request's role set.
-   *
-   * Both dropouts are reported through the configured {@link logger}
-   * (defaults to NestJS's `Logger`) so misconfiguration is visible in
-   * CI / staging. Set {@link silentRoleDropouts} to `true` to suppress
-   * the log calls in environments where you've already audited the
-   * tenant's role configuration upstream.
-   *
-   * Cross-request caching is the consumer's responsibility — wrap
-   * the callback with Redis or whatever fits your latency budget.
-   *
-   * @example
-   *   loadCustomRoles: async (tenantId, ctx) => {
-   *     const rows = await this.customRolesRepo.find({
-   *       where: { tenantId },
-   *     });
-   *     return rows.map((r) => ({
-   *       name: r.name,
-   *       permissions: r.permissions,
-   *       description: r.description,
-   *     }));
-   *   }
-   */
-  readonly loadCustomRoles?: (
-    tenantId: TId,
-    context: TenantContext<TId>,
-  ) => readonly CustomRoleEntry[] | Promise<readonly CustomRoleEntry[]>;
-
-  /**
-   * Run `validateTenantRules` at `.build()` time. Default: `true`. Setting
-   * this to `false` is intentionally undocumented in the README — it
-   * exists for library-internal tests of the bypass path. Leave it on in
-   * production.
-   */
-  readonly validateRulesAtBuild?: boolean;
-
-  /**
-   * Predicate identifying routes that are public (no auth, no tenant
-   * context, no policy check). When omitted, the guard relies on the
-   * `@Public()` decorator alone.
-   */
-  readonly isPublic?: (context: ExecutionContext) => boolean;
-
-  /**
-   * Whether to register the `TenantPoliciesGuard` and
-   * `TenantContextInterceptor` as global APP_GUARD / APP_INTERCEPTOR.
-   * Default: `true` — recommended for new apps. Set to `false` and wire
-   * them yourself when migrating an existing app incrementally.
-   */
-  readonly registerAsGlobal?: boolean;
-
-  /**
-   * Logger used by the per-request factory to report custom-role
-   * dropouts (Theme 8E). Accepts any {@link LoggerService} — the
-   * NestJS-provided `Logger`, a Pino adapter, a Winston wrapper, a
-   * test capture, etc.
-   *
-   * When omitted, the factory falls back to `new Logger('TenantAbilityFactory')`
-   * which honours the application's global NestJS log-level
-   * configuration. This replaces the prior `console.warn` calls so
-   * dropouts route through the same pipeline as the rest of the
-   * application's logs.
-   */
-  readonly logger?: LoggerService;
-
-  /**
-   * When `true`, suppress the per-request log calls for custom-role
-   * dropouts (collisions with system roles and unknown-permission
-   * references). Defaults to `false` — dropouts are logged.
-   *
-   * Use this only in environments where the tenant's custom-role
-   * configuration is already audited upstream and the per-request
-   * log noise outweighs the misconfiguration signal. The dropouts
-   * themselves still happen — only the logging is suppressed.
-   */
-  readonly silentRoleDropouts?: boolean;
+    /**
+     * Whether to register the `TenantPoliciesGuard` and
+     * `TenantContextInterceptor` as global APP_GUARD /
+     * APP_INTERCEPTOR. Default: `true` — recommended for new apps.
+     * Set to `false` and wire them yourself when migrating an
+     * existing app incrementally.
+     */
+    readonly registerAsGlobal?: boolean;
+  };
 }

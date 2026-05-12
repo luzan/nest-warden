@@ -44,7 +44,7 @@ export class TenantAbilityFactory<
     @Inject(MTC_OPTIONS) private readonly options: TenantAbilityModuleOptions<TAbility, TId>,
     @Inject(TenantContextService) private readonly contextService: TenantContextService<TId>,
   ) {
-    this.logger = options.logger ?? new Logger(TenantAbilityFactory.name);
+    this.logger = options.roles?.logger ?? new Logger(TenantAbilityFactory.name);
   }
 
   /**
@@ -70,13 +70,13 @@ export class TenantAbilityFactory<
     const customRoles = await this.loadAndValidateCustomRoles(context);
 
     const builder = new TenantAbilityBuilder<TAbility, TId>(
-      this.options.abilityClass ?? createMongoAbility,
+      this.options.builder?.abilityClass ?? createMongoAbility,
       context,
       {
-        tenantField: this.options.tenantField,
-        validateRules: this.options.validateRulesAtBuild,
+        tenantField: this.options.builder?.tenantField,
+        validateRules: this.options.builder?.validateRules,
         permissions: this.options.permissions,
-        systemRoles: this.options.systemRoles,
+        systemRoles: this.options.roles?.systemRoles,
         customRoles,
       },
     );
@@ -87,12 +87,12 @@ export class TenantAbilityFactory<
   private async loadAndValidateCustomRoles(
     context: ReturnType<TenantContextService<TId>['get']>,
   ): Promise<readonly CustomRoleEntry[]> {
-    const loader = this.options.loadCustomRoles;
+    const loader = this.options.roles?.loadCustomRoles;
     if (!loader) return [];
 
     const raw = await loader(context.tenantId, context);
     const permissions = this.options.permissions;
-    const systemRoles = this.options.systemRoles;
+    const systemRoles = this.options.roles?.systemRoles;
     const surviving: CustomRoleEntry[] = [];
 
     for (const role of raw) {
@@ -140,7 +140,7 @@ export class TenantAbilityFactory<
    * either way — only the surfaced log call is gated.
    */
   private warnDropout(message: string): void {
-    if (this.options.silentRoleDropouts === true) return;
+    if (this.options.roles?.silentDropouts === true) return;
     this.logger.warn(message);
   }
 }

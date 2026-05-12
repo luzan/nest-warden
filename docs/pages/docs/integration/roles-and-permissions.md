@@ -169,8 +169,6 @@ your `defineAbilities` callback:
 @Module({
   imports: [
     TenantAbilityModule.forRoot<AppAbility>({
-      permissions,
-      systemRoles,
       resolveTenantContext: async (req) => { /* ... */ },
       defineAbilities: (builder, ctx) => {
         // Expand named roles into rules
@@ -187,6 +185,11 @@ your `defineAbilities` callback:
           } as never);
         }
       },
+      // Permissions are top-level — the foundational vocabulary
+      // that roles and any future composer reference.
+      permissions,
+      // Role-specific configuration grouped under `roles`.
+      roles: { systemRoles },
     }),
   ],
 })
@@ -216,17 +219,19 @@ TenantAbilityModule.forRootAsync<AppAbility>({
   imports: [TypeOrmModule.forFeature([CustomRole])],
   inject: [getRepositoryToken(CustomRole)],
   useFactory: (customRolesRepo: Repository<CustomRole>) => ({
-    permissions,
-    systemRoles,
     resolveTenantContext: async (req) => { /* ... */ },
     defineAbilities: (builder, ctx) => builder.applyRoles(ctx.roles),
-    loadCustomRoles: async (tenantId) => {
-      const rows = await customRolesRepo.find({ where: { tenantId } });
-      return rows.map((r) => ({
-        name: r.name,
-        permissions: r.permissions,
-        description: r.description ?? undefined,
-      }));
+    permissions,
+    roles: {
+      systemRoles,
+      loadCustomRoles: async (tenantId) => {
+        const rows = await customRolesRepo.find({ where: { tenantId } });
+        return rows.map((r) => ({
+          name: r.name,
+          permissions: r.permissions,
+          description: r.description ?? undefined,
+        }));
+      },
     },
   }),
 })
@@ -238,9 +243,10 @@ Behavior contracts:
   same request don't re-fire the loader. RFC § Q5.
 - **Fail-closed validation.** A custom role whose `name` collides
   with a system role is dropped (system role wins). A custom role
-  referencing an unknown permission is dropped. Both emit
-  `console.warn` so the misconfiguration is visible without
-  erroring out the whole request.
+  referencing an unknown permission is dropped. Both warn through
+  the configured `roles.logger` (defaults to NestJS `Logger`) so the
+  misconfiguration is visible without erroring out the whole request.
+  Set `roles.silentDropouts: true` to suppress the log calls.
 - **Cross-request caching is your problem.** Wrap the loader with
   Redis or whatever fits your latency budget — the library treats
   authoritative data as living in your DB and doesn't try to be a

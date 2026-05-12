@@ -31,9 +31,15 @@ export interface TenantAbilityModuleAsyncOptions<
     | TenantAbilityModuleOptions<TAbility, TId>
     | Promise<TenantAbilityModuleOptions<TAbility, TId>>;
   /**
-   * Mirrors {@link TenantAbilityModuleOptions.registerAsGlobal}. The
-   * factory result's `registerAsGlobal` is also honored — if both
-   * are set, the factory's value wins.
+   * Mirrors {@link TenantAbilityModuleOptions.module.registerAsGlobal}.
+   * The factory result's `module.registerAsGlobal` is also honored —
+   * if both are set, the factory's value wins (because it has more
+   * runtime context).
+   *
+   * Lives here (not in a `module` sub-object) because the async
+   * options shape is itself a one-level config bag; nesting would
+   * compose awkwardly with the NestJS-conventional `inject`/`useFactory`
+   * keys at the same level.
    */
   readonly registerAsGlobal?: boolean;
 }
@@ -53,6 +59,11 @@ export interface TenantAbilityModuleAsyncOptions<
  *           builder.can('read', 'Merchant', { agentId: ctx.subjectId });
  *         }
  *       },
+ *       // Optional groups — omit any of them to take defaults.
+ *       builder: { tenantField: 'tenantId' },
+ *       roles: { permissions, systemRoles },
+ *       graph: relationshipGraph,
+ *       module: { registerAsGlobal: true },
  *     }),
  *   ],
  * })
@@ -62,8 +73,8 @@ export interface TenantAbilityModuleAsyncOptions<
  * The default `forRoot` registration is **global** (registers a global
  * `TenantContextInterceptor` and `TenantPoliciesGuard`) so every route
  * gets tenant scoping automatically. Disable this with
- * `registerAsGlobal: false` and wire the guard/interceptor manually for
- * incremental migration.
+ * `module: { registerAsGlobal: false }` and wire the guard/interceptor
+ * manually for incremental migration.
  *
  * The module is itself `@Global()` so the providers it exports
  * (`TenantContextService`, `TenantAbilityFactory`, ...) are available to
@@ -88,7 +99,7 @@ export class TenantAbilityModule {
     ];
 
     const globalProviders: Provider[] =
-      options.registerAsGlobal !== false
+      options.module?.registerAsGlobal !== false
         ? [
             { provide: APP_INTERCEPTOR, useClass: TenantContextInterceptor },
             { provide: APP_GUARD, useClass: TenantPoliciesGuard },
@@ -121,10 +132,12 @@ export class TenantAbilityModule {
    *     useFactory: (customRolesRepo: Repository<CustomRole>) => ({
    *       resolveTenantContext: ...,
    *       defineAbilities: ...,
-   *       permissions,
-   *       systemRoles,
-   *       loadCustomRoles: (tenantId) =>
-   *         customRolesRepo.find({ where: { tenantId } }),
+   *       roles: {
+   *         permissions,
+   *         systemRoles,
+   *         loadCustomRoles: (tenantId) =>
+   *           customRolesRepo.find({ where: { tenantId } }),
+   *       },
    *     }),
    *   })
    */

@@ -1,5 +1,77 @@
 # Changelog
 
+## [0.5.0-alpha] - 2026-05-12
+
+### Changed (BREAKING)
+
+- **`TenantAbilityModuleOptions` restructured (Theme 8B).** The flat
+  13-key options surface is now organised into three tiers:
+
+  1. **Required callbacks** at top level: `defineAbilities`,
+     `resolveTenantContext`. These ARE the contract.
+  2. **Foundational vocabulary** at top level: `permissions`.
+     Intentionally NOT nested under `roles` — roles are only ONE
+     composer of permissions, and future composers (user-level
+     grants, group/department permissions, attribute-based overrides)
+     would all reference the same registry. Putting it under `roles`
+     would hard-code "permissions are role-only" into the API.
+  3. **Optional grouped sub-objects**: `builder`, `roles`, `module`.
+     Plus `graph` which stays flat (single instance, not a config bag).
+
+  Two fields also renamed because the group prefix made them
+  redundant:
+
+  | Old | New |
+  |---|---|
+  | `validateRulesAtBuild` | `builder.validateRules` |
+  | `silentRoleDropouts` | `roles.silentDropouts` |
+
+  Full migration table:
+
+  | 0.4.x flat key | 0.5.x location |
+  |---|---|
+  | `defineAbilities` | (unchanged, top level) |
+  | `resolveTenantContext` | (unchanged, top level) |
+  | `permissions` | (unchanged, top level — promoted out of any group) |
+  | `tenantField` | `builder.tenantField` |
+  | `abilityClass` | `builder.abilityClass` |
+  | `validateRulesAtBuild` | `builder.validateRules` |
+  | `systemRoles` | `roles.systemRoles` |
+  | `loadCustomRoles` | `roles.loadCustomRoles` |
+  | `logger` | `roles.logger` |
+  | `silentRoleDropouts` | `roles.silentDropouts` |
+  | `graph` | (unchanged, top level) |
+  | `isPublic` | `module.isPublic` |
+  | `registerAsGlobal` | `module.registerAsGlobal` |
+
+  Library code updated, all 382 tests migrated, 100% coverage holds.
+  Example app's `app.module.ts` migrated. Docs (`nestjs.md`,
+  `roles-and-permissions.md`) snippets updated.
+
+  Migration in your app: structural rename per the table above. No
+  shim is provided in this cycle — the library is pre-1.0 and
+  consumers are pinning exact versions; a clean break keeps the
+  surface honest going into v1.0.
+
+### Changed
+
+- **Minified published JS (Theme 11A).** Flipped `minify: false` →
+  `true` in `tsup.config.ts`. Effects on the published tarball:
+
+  | Metric | Before | After |
+  |---|---|---|
+  | Tarball (.tgz) | 100 KB | **90 KB** |
+  | `dist/index.cjs` raw | 21.1 KB | **8.7 KB** |
+  | `dist/index.cjs` gzipped | 6.3 KB | **3.5 KB** |
+  | `dist/nestjs/index.cjs` gzipped | 6.96 KB | **3.6 KB** |
+  | `dist/typeorm/index.cjs` gzipped | 6.7 KB | **4.4 KB** |
+
+  No effect on local debugging — source maps still ship to
+  `dist/*.map` for the example app's `file:../..` consumption but
+  are excluded from the npm tarball via `!dist/**/*.map` in
+  `package.json`'s `files`. So consumers download minified code with
+  no maps; local dev keeps the unminified-with-maps experience.
+
 ## [0.4.3-alpha] - 2026-05-12
 
 ### Added
