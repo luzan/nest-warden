@@ -97,6 +97,6 @@ you just as well.
 
 ## See also
 
-- [Why nest-warden?](/docs/get-started/why/) — the four CASL gaps that motivated the library.
+- [Why nest-warden?](/docs/get-started/why/) — what the library is, what it adds, what it isn't.
 - [Tenant Context](/docs/core-concepts/tenant-context/) — the request-scoped abstraction that carries the tenant ID.
 - [Postgres RLS](/docs/integration/rls-postgres/) — the database-layer defense in depth, supported only in the shared-schema model.

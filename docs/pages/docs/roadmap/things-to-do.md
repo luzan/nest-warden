@@ -557,4 +557,4 @@ Items that have been considered and deliberately deferred:
 ## See also
 
 - [CHANGELOG](https://github.com/luzan/nest-warden/blob/main/CHANGELOG.md) — what shipped, what's pending
-- [Why nest-warden?](/docs/get-started/why/) — the four CASL gaps that motivated the project
+- [Why nest-warden?](/docs/get-started/why/) — what the library is, what it adds, what it isn't

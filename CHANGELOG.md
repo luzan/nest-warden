@@ -1,5 +1,66 @@
 # Changelog
 
+## [0.5.1-alpha] - 2026-05-12
+
+### Changed
+
+- **Repositioning: README and `Why?` page rewritten to drop the
+  "four gaps in CASL" framing (Theme 12).** Earlier drafts described
+  nest-warden as filling four gaps in `@casl/ability`. After
+  reviewing the upstream codebase more carefully — and after the
+  review on [stalniy/ucast#84](https://github.com/stalniy/ucast/pull/84),
+  which pushed back on the parser-level approach we proposed and
+  pointed out that operator-level `validate()` is the correct
+  architectural layer — the framing no longer survived scrutiny.
+
+  **What's the new framing?** nest-warden is an opinionated,
+  stack-specific bundle for NestJS + TypeORM + multi-tenant SaaS.
+  Three additions on top of CASL:
+
+  1. `$relatedTo` operator + relationship graph — genuinely novel,
+     no equivalent in CASL or its current ecosystem.
+  2. Runtime tenant-predicate guarantee — `validateTenantRules` at
+     `.build()` time + auto-injection on every emitted rule.
+     Defense-in-depth on top of CASL's existing type-level
+     extension points (which catch static misuse).
+  3. `accessibleBy()` for TypeORM — fills a real adapter gap today,
+     with `@ucast/sql` on the upstream roadmap as the eventual
+     replacement; our compiler may migrate to consume it.
+
+  Plus the NestJS / TypeORM integration glue — module, guard,
+  decorators, subscriber, RLS hook — packaged once instead of
+  rewritten per project.
+
+  **What's specifically dropped:**
+
+  - The "Gap 4 — underspecified conditional authorization" framing
+    is gone. CASL's matchers fail closed on misspelt operators
+    (forward check returns `false`, not "matches everything"), and
+    its shipped adapters validate properly. The "matches every row"
+    failure mode is real but specific to consumer-written SQL
+    adapters — a downstream symptom of the missing TypeORM adapter,
+    not a CASL flaw.
+
+  - "Tenant safety by construction" no longer claims a missing
+    primitive. Tenant safety is expressible at the type level in
+    CASL; nest-warden adds the runtime guarantee on top, which is
+    a narrower (and more honest) claim.
+
+  **Files touched:**
+
+  - `README.md` — `Why` and `Headline features` sections rewritten.
+  - `docs/pages/docs/get-started/why.md` — full rewrite, now ~180
+    lines (was ~200) with the four-section "What it adds" / "What
+    it isn't" structure.
+  - `docs/pages/index.md` — landing-page bullet list rewritten.
+  - `docs/pages/docs/get-started/when-to-use.md`,
+    `docs/pages/docs/core-concepts/tenancy-models.md`,
+    `docs/pages/docs/integration/migration-from-casl.md`,
+    `docs/pages/docs/roadmap/things-to-do.md` — cross-reference
+    descriptions updated.
+
+  No library code changes. Patch bump.
+
 ## [0.5.0-alpha] - 2026-05-12
 
 ### Changed (BREAKING)

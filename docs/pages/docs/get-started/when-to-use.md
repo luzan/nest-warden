@@ -88,6 +88,6 @@ service can plug in without re-engineering the in-process path.
 
 ## See also
 
-- [Why nest-warden?](/docs/get-started/why/) — the four CASL gaps that motivated the library.
-- [Roadmap](/docs/roadmap/things-to-do/) — what's queued for v0.2 and beyond.
+- [Why nest-warden?](/docs/get-started/why/) — what the library is, what it adds on top of CASL, and what it isn't.
+- [Roadmap](/docs/roadmap/things-to-do/) — what's queued for v1.0 and beyond.
 - [Forward vs Reverse Lookups](/docs/core-concepts/forward-vs-reverse/) — the two query shapes nest-warden answers.

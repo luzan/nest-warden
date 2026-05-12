@@ -4,7 +4,7 @@ Tenant-aware authorization for NestJS + TypeORM, built on top of [`@casl/ability
 
 > **⚠️ Alpha / experimental — do not use in production yet.**
 >
-> `nest-warden` is **0.5.0-alpha**. The API surface is stabilizing but
+> `nest-warden` is **0.5.1-alpha**. The API surface is stabilizing but
 > remains subject to breaking changes between alpha releases. Names,
 > signatures, and module boundaries may shift before v1.0.
 >
@@ -13,29 +13,79 @@ Tenant-aware authorization for NestJS + TypeORM, built on top of [`@casl/ability
 > for at least one quarter" — plus the API freeze and library-coupling
 > hardening tracked in the [public roadmap](./docs/pages/docs/roadmap/things-to-do.md)
 > (Themes 4 and 8). Until then, treat every alpha release as
-> experimental and pin to an exact version (`"nest-warden": "0.5.0-alpha"`)
+> experimental and pin to an exact version (`"nest-warden": "0.5.1-alpha"`)
 > rather than a range.
 
-## Why
+## What this is
 
-`@casl/ability` is an excellent declarative authorization DSL, but it has four gaps for multi-tenant SaaS:
+`nest-warden` is an opinionated, stack-specific bundle for one
+shape of app: **NestJS + TypeORM + multi-tenant SaaS**. It builds
+on top of [`@casl/ability`](https://casl.js.org/) without trying to
+replace or fix it.
 
-1. **No first-class tenant primitive.** Forgetting `tenantId` in a rule's conditions silently leaks data across tenants.
-2. **No graph-relationship traversal.** Rules like *"Alice is an agent of Merchant M of Tenant X → Alice can approve M's payments"* can't be expressed without denormalization or pre-flight queries.
-3. **No TypeORM adapter for reverse lookups.** CASL ships official adapters only for `@casl/mongoose` and `@casl/prisma`. The single SQL adapter is Prisma — TypeORM users get nothing. CASL also can't answer *"which Ys can Alice access?"* without loading them all and filtering — O(n) DB I/O.
-4. **Underspecified conditional authorization.** Hand-rolled condition translators (a common pattern in CASL consumers without an official `@casl/typeorm`) can produce wrong-shape rules that CASL accepts without complaint. CASL's `ObjectQueryParser` silently reinterprets unknown operator keys as field names; the resulting rule either never matches (`ability.can(...)` fails closed) or — in hand-rolled `accessibleBy()` adapters that drop unknown keys when assembling a WHERE clause — returns every row (silent permission escalation). Runnable repro: [`examples/casl-conditions-demo`](./examples/casl-conditions-demo).
+If you already know CASL, the simplest framing is: nest-warden
+packages the patterns that work for the multi-tenant case, adds
+runtime-safety enforcement on top of the type-level patterns CASL
+supports, and ships the NestJS + TypeORM integration glue.
 
-`nest-warden` closes all four gaps as a thin layer above CASL.
+Three things it adds that the underlying tools don't (today):
 
-## Headline features
+- **Relationship graph + `$relatedTo`.** A registered-once graph of
+  relationships between resources, plus a `$relatedTo` operator
+  that walks the graph at rule time. Multi-hop access like *"Alice
+  is an agent of Merchant M of Tenant X → Alice can approve M's
+  payments"* compiles directly to `EXISTS` subqueries without
+  denormalization or pre-flight loads. There's no equivalent in
+  CASL or its current ecosystem.
 
-- **Tenant safety by construction** — rules can't be built without a tenant predicate (or explicit `crossTenant` opt-out).
-- **Relationship graph + `$relatedTo`** — register relationships once; rules express multi-hop access; the TypeORM adapter compiles paths to JOIN / EXISTS.
-- **First-class `accessibleBy()` for TypeORM** — fills the gap CASL doesn't. Single SQL query for "all resources this subject can access," with tenant + graph applied automatically. Same shape as `@casl/prisma`'s `accessibleBy()`, adapted to TypeORM's QueryBuilder.
-- **Conditional authorization, correctly wired** — uses CASL's own `mongoQueryMatcher`; unsupported operators throw at compile time, never silently filter wrong.
-- **First-party NestJS integration** — module, guard, decorators, request-scoped tenant context, RLS hook.
-- **Generic tenant ID** — `string | number`, defaults to `string` (UUID-friendly).
-- **Isomorphic core** — same rules drive backend enforcement and frontend UI gating.
+- **Runtime tenant-predicate guarantee.** Forgetting `tenantId` in a
+  CASL rule's conditions is a silent cross-tenant leak in plain
+  CASL. nest-warden's `TenantAbilityBuilder` auto-injects the
+  predicate on every emitted rule, and `validateTenantRules`
+  throws at `.build()` time if any rule is missing the predicate
+  and isn't explicitly marked `crossTenant`. The check runs even
+  when the type system would have allowed the rule (`as never`,
+  generic abilities, cross-package boundaries) — type-level
+  patterns catch static misuse; this catches everything else.
+
+- **`accessibleBy()` for TypeORM.** CASL ships official adapters
+  for Mongoose and Prisma. TypeORM users currently have to write
+  their own. nest-warden ships one — same shape as
+  `@casl/prisma.accessibleBy()`, adapted to TypeORM's QueryBuilder,
+  with `$relatedTo` paths compiled to correlated `EXISTS`
+  subqueries and tenant scope folded in automatically. A broader
+  SQL-adapter effort is on the upstream roadmap (`@ucast/sql`); as
+  it matures, nest-warden's compiler may migrate to consume it
+  rather than re-implement.
+
+Plus the NestJS integration: a module, a global guard,
+request-scoped tenant context, four decorators, a TypeORM
+subscriber + RLS session hook. None of this is novel design — it's
+the wiring most teams end up writing themselves, packaged once and
+tested in an example app that ships with the library.
+
+## What it isn't
+
+- **Not a replacement for `@casl/ability`.** CASL is the rule
+  engine; nest-warden is a bundle around it. Every rule you build
+  is a CASL rule.
+- **Not a fix for CASL bugs.** Earlier drafts of this README
+  described nest-warden as filling "gaps" in CASL; the framing was
+  too strong. CASL's matchers and shipped adapters behave correctly.
+  The runtime tenant guarantee and `accessibleBy()` for TypeORM are
+  additions on top of a sound foundation, not patches for a leaky
+  one. (The history of that framing — and why it changed — is in
+  CHANGELOG `0.5.1-alpha`.)
+- **Not a Zanzibar / OpenFGA replacement.** Single app, single
+  database. No cross-service relationship propagation. See
+  [`/docs/get-started/when-to-use/`](./docs/pages/docs/get-started/when-to-use.md)
+  for the full boundary.
+- **Not the right tool if you don't use NestJS + TypeORM.** The
+  core (`nest-warden`) is isomorphic and works anywhere CASL does,
+  but the integration value lives in `nest-warden/nestjs` and
+  `nest-warden/typeorm` — if you're on Fastify standalone or
+  Mongoose, you'd be importing core and writing the rest yourself
+  (at which point CASL alone may serve you).
 
 ## Install
 
