@@ -72,42 +72,34 @@ time, before parameter binding. `set_config(name, value, is_local)`
 is the executor-level equivalent and is fully parameterizable.
 `is_local = true` makes the change transaction-scoped.
 
-## Auto-set with `RlsTransactionInterceptor`
+## Setting the session variable per request
 
-The library ships a NestJS interceptor that wraps every
-non-public request in a transaction and runs `set_config(...)` before
-the route handler. Register it as a global APP_INTERCEPTOR:
+Something has to call `SELECT set_config('app.current_tenant_id', $1,
+true)` before each authenticated request hits a tenant-scoped table.
+There are three strategies, each with different trade-offs around
+connection-pool pressure, TypeORM-internal coupling, and PgBouncer
+compatibility:
 
-```ts
-import { APP_INTERCEPTOR } from '@nestjs/core';
-import { RlsTransactionInterceptor } from 'nest-warden/typeorm';
+1. **`RlsTransactionInterceptor`** — a NestJS interceptor that ships
+   with the library. Simplest wiring; opens a transaction per
+   request.
+2. **TypeORM subscriber + `AsyncLocalStorage`** — sets the variable
+   on the connection without opening a transaction.
+3. **Scoped transactions inside services** — explicit, per-DB-call
+   transaction management.
 
-@Module({
-  imports: [TenantAbilityModule.forRoot({ ... })],
-  providers: [
-    { provide: APP_INTERCEPTOR, useClass: RlsTransactionInterceptor },
-  ],
-})
-export class AppModule {}
-```
+See the **["Auto-setting the RLS session variable"
+recipe](/docs/advanced/recipes/#auto-setting-the-rls-session-variable)**
+for the full discussion: when each strategy fits, the per-request
+pool-pressure cost of strategy 1, the PgBouncer caveat that
+disqualifies strategy 2 under transaction pooling, and code examples
+for each.
 
-The interceptor:
-- Skips public routes (no tenant context, no transaction).
-- Opens a transaction, sets `app.current_tenant_id`, runs the
-  handler, commits on success / rolls back on error.
-- Releases the connection regardless of outcome.
-
-## Performance considerations
-
-Opening a transaction per request:
-- Adds one round-trip at the start (the `SELECT set_config(...)`).
-- Holds a pooled connection for the request's lifetime.
-
-For most request volumes this is negligible. For very-high-RPS
-read-mostly endpoints (e.g., a webhook ingestion service), consider
-scoping the transaction more narrowly — wrap a single service method
-instead of the whole request, so connections aren't held open during
-network I/O.
+The interceptor (strategy 1) is no longer the recommended default —
+it's a fine starting point for low-to-medium RPS but the pool
+behaviour matters at scale. When wired, it emits a one-time startup
+warning pointing back at the recipe; pass `silentStartupWarning: true`
+in its options once you've audited the trade-off for your app.
 
 ## Two roles: app vs system
 

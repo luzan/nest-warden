@@ -1,6 +1,12 @@
 import Link from 'next/link';
 import type { ReactNode } from 'react';
 import { sidebarSections } from './sidebar.config';
+// Source the version directly from the parent library's package.json
+// at build time so the sidebar header can never drift away from the
+// actual published version. Next.js inlines JSON imports as static
+// data, and `resolveJsonModule` in tsconfig.json keeps the type
+// checker happy.
+import libraryPkg from '../../package.json';
 
 /**
  * Shared layout that wraps every doc page. Two-column shell: a fixed
@@ -37,7 +43,7 @@ export function Layout({ children, title }: LayoutProps): JSX.Element {
           nest-warden
         </Link>
         <div style={{ fontSize: '0.75rem', color: '#6b7280', marginBottom: '1.5rem' }}>
-          docs · v0.2.0-alpha
+          docs · v{libraryPkg.version}
         </div>
         <nav>
           {sidebarSections.map((section) => (

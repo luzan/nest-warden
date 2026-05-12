@@ -233,8 +233,156 @@ return {
 };
 ```
 
+## Auto-setting the RLS session variable
+
+[Postgres RLS policies](/docs/integration/rls-postgres/) read the
+tenant id from a session variable (`app.current_tenant_id` by default).
+Something has to set that variable before each authenticated request
+hits a tenant-scoped table. There are three strategies; pick based on
+your app's request volume and existing transaction-management
+patterns.
+
+### Strategy 1 — `RlsTransactionInterceptor` (the simplest)
+
+The library ships a NestJS interceptor that wraps every non-public
+request in a transaction and runs `SELECT set_config(...)` before the
+route handler. Register it as a global APP_INTERCEPTOR:
+
+```ts
+import { APP_INTERCEPTOR } from '@nestjs/core';
+import { RlsTransactionInterceptor } from 'nest-warden/typeorm';
+
+@Module({
+  imports: [TenantAbilityModule.forRoot({ ... })],
+  providers: [
+    { provide: APP_INTERCEPTOR, useClass: RlsTransactionInterceptor },
+    // Optional: suppress the one-time startup warning once you've
+    // audited the trade-off below.
+    // { provide: 'MTC_RLS_OPTIONS', useValue: { silentStartupWarning: true } },
+  ],
+})
+export class AppModule {}
+```
+
+What it does:
+- Skips public routes (no tenant context, no transaction).
+- Opens a transaction, sets `app.current_tenant_id`, runs the handler,
+  commits on success / rolls back on error.
+- Releases the connection regardless of outcome.
+
+**Trade-off — pool pressure.** The interceptor opens a transaction
+for *every* request, including read-only routes that don't otherwise
+need one. Each request holds a pooled connection for its lifetime.
+For high-RPS workloads (~hundreds of RPS or more), this can saturate
+the connection pool faster than you'd expect. The interceptor emits
+a one-time startup warning on its first instantiation flagging this;
+pass `{ silentStartupWarning: true }` via `MTC_RLS_OPTIONS` once you've
+explicitly decided this trade-off is acceptable for your app.
+
+Use this strategy when:
+- You're in the early/medium stages of a SaaS app where RPS is in
+  the tens-of-RPS range.
+- You value wiring simplicity over peak throughput.
+- Your route handlers do more than trivial DB work — the round-trip
+  cost is amortised.
+
+### Strategy 2 — `set_config` via a TypeORM subscriber
+
+Avoid the per-request transaction by setting the session variable on
+the connection itself, just before TypeORM's first query in the
+request. This needs the same
+[`AsyncLocalStorage` bridge](https://github.com/luzan/nest-warden/blob/main/examples/nestjs-app/src/auth/tenant-als.ts)
+the example app already uses for `TenantSubscriber`:
+
+```ts
+@EventSubscriber()
+export class RlsSessionSubscriber implements EntitySubscriberInterface {
+  beforeQuery(event: QueryEvent) {
+    const tenantId = tenantAls.getStore()?.tenantId;
+    if (!tenantId) return; // public route, no scope to set
+    // set_config with is_local=false applies for the rest of the
+    // session; no transaction required. Connection-pool reuse is
+    // safe because the pool resets session state on release.
+    return event.queryRunner.query(
+      'SELECT set_config($1, $2, false)',
+      ['app.current_tenant_id', tenantId],
+    );
+  }
+}
+```
+
+Caveats:
+- TypeORM's `beforeQuery` hook is not part of the stable public API
+  in every TypeORM version. Verify with your version before relying
+  on this.
+- With `is_local = false`, you depend on the pool resetting session
+  state between checkouts. Standard `pg-pool` does this; PgBouncer in
+  transaction-pooling mode does NOT. See "PgBouncer" below.
+
+Use this strategy when:
+- Connection pool pressure is a concern.
+- You're comfortable with a TypeORM-internal hook.
+
+### Strategy 3 — scoped transactions inside services
+
+Wrap only the service methods that hit the database in transactions
+that set the variable, instead of the whole request:
+
+```ts
+async findManyAsTenant<T>(fn: (qr: QueryRunner) => Promise<T>): Promise<T> {
+  const qr = this.dataSource.createQueryRunner();
+  await qr.connect();
+  await qr.startTransaction();
+  try {
+    await qr.query('SELECT set_config($1, $2, true)', [
+      'app.current_tenant_id', this.tenantContext.tenantId,
+    ]);
+    const result = await fn(qr);
+    await qr.commitTransaction();
+    return result;
+  } catch (err) {
+    await qr.rollbackTransaction();
+    throw err;
+  } finally {
+    await qr.release();
+  }
+}
+```
+
+This is the most flexible but also the most boilerplate-y. Use when:
+- You have a small number of DB-heavy service methods rather than
+  many DB-light controllers.
+- You want explicit control over transaction boundaries.
+
+### PgBouncer caveat (applies to all three)
+
+If you front Postgres with [PgBouncer](https://www.pgbouncer.org/) in
+**transaction-pooling** or **statement-pooling** mode, the underlying
+connection is returned to the pool between transactions / statements
+respectively. Session-scoped state like `app.current_tenant_id`
+**does not persist** across pool checkouts.
+
+Strategies 1 and 3 use `is_local = true` (transaction-scoped), which
+works correctly under transaction pooling — the SET only lives for
+the duration of the transaction, which is also the duration of the
+pool checkout.
+
+Strategy 2's session-scoped SET (`is_local = false`) is **incompatible**
+with transaction-pooling PgBouncer. Use session-pooling mode, or
+switch to Strategy 1.
+
+### What about `SET LOCAL`?
+
+The native Postgres statement is `SET LOCAL <var> = <value>`. It
+doesn't accept bound parameters in the value position — Postgres
+parses `SET` at parse time, before parameter binding. `set_config(name,
+value, is_local)` is the executor-level equivalent and is fully
+parameterizable. Always use `set_config`. The library's `buildRlsSet`
+helper emits the right thing.
+
 ## See also
 
+- [Postgres RLS policies](/docs/integration/rls-postgres/) — defining the policies and the two-role pattern.
 - [Tenant Context](/docs/core-concepts/tenant-context/) — `attributes` field for impersonation / escalation metadata.
 - [Audit Logging](/docs/advanced/audit-logging/) — recording the patterns above.
 - [`@AllowCrossTenant`](/docs/integration/nestjs/) — the route-level marker.
