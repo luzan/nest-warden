@@ -16,8 +16,11 @@ SaaS:
    and Prisma adapters; TypeORM users get nothing. CASL also can't
    answer *"which Ys can Alice access?"* without loading them all and
    filtering — O(n) DB I/O.
-4. **Underspecified conditional authorization** — hand-rolled condition
-   translators silently drop conditions when wrong.
+4. **Underspecified conditional authorization** — CASL's parser
+   silently reinterprets unknown operator keys as field names, so
+   hand-rolled condition translators can produce rules that either
+   never match (fail closed) or — through adapters that drop unknown
+   keys — return every row (fail open).
 
 ## Where to start
 

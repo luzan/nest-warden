@@ -1,5 +1,31 @@
 # Changelog
 
+## [0.3.1-alpha] - 2026-05-12
+
+### Fixed
+
+- **Documentation — Gap 4 wording corrected.** The previous claim
+  that `{ equals: value }` instead of `{ $eq: value }` "produces a
+  rule that matches everything" was imprecise. CASL's parser
+  silently reinterprets unknown operator keys as field names; the
+  resulting forward-check (`ability.can(...)`) fails *closed*
+  (never matches). The "matches everything" failure mode is real
+  but specific to the reverse-lookup path through hand-rolled SQL
+  adapters that drop unknown operators from the WHERE clause. The
+  README, docs landing page, and `docs/get-started/why/` now
+  describe both failure modes accurately. Surface raised during a
+  conversation with the CASL author (@stalniy).
+
+### Added
+
+- **`examples/casl-conditions-demo`** — runnable 7-case repro
+  demonstrating CASL's silent-fallback behaviour for unknown
+  operator keys, the forward-check fails-closed vs reverse-lookup
+  fails-open distinction, and a validation asymmetry between
+  `@casl/prisma`'s `equals` (validates, throws) and `@casl/ability`
+  Mongo's `$eq` (no `validate()`, silently returns false). Tested
+  against `@casl/ability@6.8.1` + `@casl/prisma@1.4.1`.
+
 ## [0.3.0-alpha] - 2026-05-11
 
 ### Minor Changes

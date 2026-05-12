@@ -1,0 +1,12 @@
+{
+  "name": "casl-conditions-demo",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node demo.mjs"
+  },
+  "dependencies": {
+    "@casl/ability": "6.8.1",
+    "@casl/prisma": "1.4.1"
+  }
+}
