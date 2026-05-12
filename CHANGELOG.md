@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.4.2-alpha] - 2026-05-12
+
+### Added
+
+- **Standalone "Tenancy Models" doc page (Theme 8G).** New page at
+  `/docs/core-concepts/tenancy-models/` promotes the previously
+  inline subsection in `/docs/get-started/why/` into a dedicated
+  Core Concepts entry. The page covers:
+  - What the library assumes (shared DB + shared schema).
+  - A status matrix for the three common multi-tenancy models.
+  - "What would have to change to support each unsupported variant"
+    notes for consumers who want to prototype outside the official
+    surface — concrete enough to be useful (specific interceptors
+    to write, predicates to drop, pooling caveats) without
+    committing the project to support work it isn't doing.
+  - A decision matrix for picking the right model in a new app.
+
+  The `/why/` page now carries a 4-line summary plus a pointer.
+  Sidebar entry added under Core Concepts as the first link (it's
+  upstream of every other concept on the page).
+
 ## [0.4.1-alpha] - 2026-05-12
 
 ### Changed

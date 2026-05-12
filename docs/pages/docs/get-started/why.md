@@ -181,24 +181,18 @@ doesn't need.
 
 ## Supported tenancy models
 
-The library targets a single tenancy model in v1.0 — the most common
-one — and deliberately does not try to cover the rest.
+`nest-warden` targets **shared database + shared schema** (a
+`tenant_id` column on every tenant-bearing table). Schema-per-tenant
+and database-per-tenant are not supported in v1.0.
 
-| Tenancy model | Status in v1.0 | Notes |
-|---|---|---|
-| **Shared database, shared schema** (tenant-id column on every tenant-bearing table) | ✅ Supported | The primary use case. Tenant injection, `accessibleBy()`, `$relatedTo`, the NestJS module, and the optional Postgres RLS hook all assume this model. |
-| **Shared database, schema-per-tenant** (one Postgres schema per tenant, switched via `search_path`) | ❌ Not supported | Would require request-scoped `search_path` injection and a `DataSource` that respects it. Not on the v1.0 roadmap; revisit post-v1.0 if demand surfaces. |
-| **Database-per-tenant** (a distinct `DataSource` per tenant) | ❌ Not supported | Would require DI-scoping a `DataSource` per request and routing repositories accordingly. Out of scope. |
-
-If you need schema- or database-per-tenant isolation, nest-warden's
-authz primitives (the builder, `$relatedTo`, `accessibleBy()`) still
-work in principle — you'd be wiring tenant scoping at the connection
-layer instead of the column layer. The integration pieces (the NestJS
-module, the RLS interceptor) would need to change. We have not done
-that work and have no plans to in v0.x.
+See [Tenancy Models](/docs/core-concepts/tenancy-models/) for the
+full comparison table, the work that would be needed to support the
+unsupported variants, and a decision matrix for picking the right
+model in a new app.
 
 ## Read next
 
+- [Tenancy Models](/docs/core-concepts/tenancy-models/) — the supported model, in detail.
 - [Installation](/docs/get-started/installation/) — get started.
 - [Tenant Context](/docs/core-concepts/tenant-context/) — the central abstraction.
 - [`$relatedTo`](/docs/core-concepts/related-to/) — the multi-hop operator in detail.
