@@ -1,5 +1,40 @@
 # Changelog
 
+## [0.4.3-alpha] - 2026-05-12
+
+### Added
+
+- **Example app — `TenantSubscriber` wired end-to-end + E2E test
+  (Theme 2 tail).** The example's `app.module.ts` now registers
+  `TenantSubscriber` on its TypeORM `DataSource` via
+  `OnModuleInit`, completing the application-layer defense in
+  depth on top of Postgres RLS. New `auth/tenant-als.ts` and
+  `auth/tenant-als.interceptor.ts` bridge the NestJS REQUEST scope
+  to TypeORM's synchronous subscriber hooks via
+  `AsyncLocalStorage` — the supported pattern for code that needs
+  per-request state outside Nest's DI graph. New
+  `test/e2e/tenant-subscriber.e2e.test.ts` proves the
+  cross-tenant `beforeUpdate` rejection end-to-end against real
+  Postgres (PATCH `/merchants/:id` with a `tenantId` field
+  overriding the row's tenant → 500 + the row stays put). E2E
+  count: 58 → 60.
+
+  Two discoveries documented in `examples/nestjs-app/FINDINGS.md`:
+
+  - **§ 13.** TypeORM silently drops subscriber INSTANCES from
+    `DataSourceOptions.subscribers` (only class refs are loaded).
+    The library's JSDoc example showed the unsupported shape; this
+    finding records the actual working path via `OnModuleInit` and
+    a manual `dataSource.subscribers.push(...)`.
+  - **§ 14.** `AsyncLocalStorage` as the canonical bridge from
+    NestJS REQUEST scope into TypeORM subscribers. Patterns,
+    ordering against nest-warden's `TenantContextInterceptor`, and
+    a caveat on RxJS-Observable-vs-callback bridging.
+
+  Library code is unchanged in this release; the wiring is example
+  scaffolding that future consumers can copy. Bumps to
+  `0.4.3-alpha`.
+
 ## [0.4.2-alpha] - 2026-05-12
 
 ### Added

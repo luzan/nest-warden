@@ -315,6 +315,98 @@ itself.
 Comment the omission explicitly in `sql/init.sql` so a future
 reviewer doesn't "fix" it.
 
+## 13. TypeORM silently drops subscriber INSTANCES from `DataSourceOptions.subscribers`
+
+**Symptom.** `nest-warden/typeorm`'s `TenantSubscriber` JSDoc shows
+the canonical wire-up as:
+
+```ts
+const dataSource = new DataSource({
+  ...,
+  subscribers: [new TenantSubscriber(() => contextService.tenantId)],
+});
+```
+
+That compiles and runs. But the subscriber's hooks never fire on
+inserts or updates — every write goes through unenforced.
+
+**Root cause.** TypeORM's subscriber loader in v0.3.x walks the
+`subscribers` array looking for two shapes: strings (glob paths to
+load classes from) and functions (class refs to instantiate). Any
+entry that's already an instance — neither a string nor a function
+— is silently dropped. The JSDoc example happens to be the
+unsupported shape; the working pattern is to push instances onto
+`dataSource.subscribers` AFTER construction.
+
+**Fix.** Wire via `OnModuleInit` against an `@InjectDataSource`'d
+DataSource:
+
+```ts
+@Module({...})
+export class AppModule implements OnModuleInit {
+  constructor(@InjectDataSource() private readonly ds: DataSource) {}
+  onModuleInit() {
+    this.ds.subscribers.push(
+      new TenantSubscriber(resolveTenantIdFromAls)
+    );
+  }
+}
+```
+
+This is the supported path for subscribers that need a captured-
+closure resolver (which can't be expressed as a class with DI'd
+deps, because `TenantContextService` is REQUEST-scoped and
+TypeORM has no notion of NestJS scopes).
+
+The library's JSDoc has been left as-is for the v0.x line because
+fixing it would require either a breaking signature change or a
+runtime check; the example app's wiring + this finding document
+the actual working shape.
+
+## 14. AsyncLocalStorage bridges NestJS REQUEST scope into TypeORM subscribers
+
+**Symptom.** `TenantSubscriber` accepts a `tenantResolver: () =>
+TenantIdValue | undefined`. The natural shape — close over
+`TenantContextService` — doesn't compose: the service is
+REQUEST-scoped, but the subscriber instance is constructed once at
+module init and lives on the singleton DataSource.
+
+**Root cause.** TypeORM has no notion of NestJS's REQUEST scope.
+Subscriber hooks fire synchronously inside the same call stack as
+the database operation that triggers them, with no DI access of
+their own. A closure over a request-scoped service captures the
+INITIAL (empty) instance at construction time, not the current
+request's instance.
+
+**Fix.** Node's `AsyncLocalStorage` propagates a value through the
+async-execution context, including across promise chains and
+microtasks. The interceptor `enters` the store at the start of
+each request; the subscriber reads via `tenantAls.getStore()` at
+write time. Both the interceptor and the subscriber agree on
+which tenant id is "active" without any service injection.
+
+**Implementation.** See:
+
+- `examples/nestjs-app/src/auth/tenant-als.ts` — the
+  `AsyncLocalStorage` instance + the resolver function passed to
+  the subscriber.
+- `examples/nestjs-app/src/auth/tenant-als.interceptor.ts` —
+  REQUEST-scoped interceptor that wraps the controller in
+  `tenantAls.run(...)`. Registered as `APP_INTERCEPTOR` after
+  nest-warden's `TenantContextInterceptor` (which populates the
+  service we read from).
+
+**Caveats.**
+
+- The interceptor uses an Observable wrapper to bridge `tenantAls.run`
+  (callback-style) and NestJS's RxJS-based interceptor contract.
+  Subscribe inside the `als.run` callback so the subscription —
+  which is what actually invokes the controller — inherits the
+  store.
+- `AsyncLocalStorage` adds a small per-async-boundary cost. For an
+  HTTP-bound NestJS app the overhead is invisible; in a high-QPS
+  job worker it might matter.
+
 ## 12. Postgres parameter-type inference fails when a row's only typed value is jsonb
 
 **Symptom.** A multi-row INSERT like

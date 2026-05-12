@@ -1,11 +1,14 @@
-import { Module } from '@nestjs/common';
-import { APP_GUARD } from '@nestjs/core';
-import { TypeOrmModule, getRepositoryToken } from '@nestjs/typeorm';
+import { Inject, Module, type OnModuleInit } from '@nestjs/common';
+import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
+import { InjectDataSource, TypeOrmModule, getRepositoryToken } from '@nestjs/typeorm';
 import { TenantAbilityModule } from 'nest-warden/nestjs';
+import { TenantSubscriber } from 'nest-warden/typeorm';
 import type { ForbiddenException } from '@nestjs/common';
-import type { Repository } from 'typeorm';
+import type { DataSource, Repository } from 'typeorm';
 import { AuthModule } from './auth/auth.module.js';
 import { JwtAuthGuard } from './auth/jwt.guard.js';
+import { TenantAlsInterceptor } from './auth/tenant-als.interceptor.js';
+import { resolveTenantIdFromAls } from './auth/tenant-als.js';
 import { TenantMembership } from './auth/tenant-membership.entity.js';
 import { User } from './auth/user.entity.js';
 import { defineAbilities, type AppAbility } from './auth/permissions.js';
@@ -38,6 +41,14 @@ void (null as unknown as ForbiddenException); // type-only retain
           User,
           TenantMembership,
         ],
+        // `TenantSubscriber` is wired in `AppModule.onModuleInit`
+        // below — TypeORM's `DataSourceOptions.subscribers` accepts
+        // class refs only (instances are silently dropped during
+        // loading), and our subscriber needs a captured-closure
+        // resolver. The `AppModule` lifecycle hook constructs the
+        // instance with the closure and pushes it onto
+        // `dataSource.subscribers` after the DataSource is up but
+        // before the first request arrives.
         synchronize: false,
         logging: false,
       }),
@@ -96,6 +107,34 @@ void (null as unknown as ForbiddenException); // type-only retain
     // JwtAuthGuard runs BEFORE the TenantPoliciesGuard so request.user is
     // available when the policies guard / interceptor read it.
     { provide: APP_GUARD, useClass: JwtAuthGuard },
+    // Wraps the controller in `tenantAls.run(...)` so `TenantSubscriber`
+    // (registered on the singleton DataSource) can read the per-request
+    // tenant id from inside TypeORM's synchronous hooks. Must run AFTER
+    // nest-warden's `TenantContextInterceptor` (which populates
+    // `TenantContextService`) — that interceptor comes from
+    // `TenantAbilityModule` and is registered earlier in the dep graph,
+    // so it always wraps outermost.
+    { provide: APP_INTERCEPTOR, useClass: TenantAlsInterceptor },
   ],
 })
-export class AppModule {}
+export class AppModule implements OnModuleInit {
+  constructor(@InjectDataSource() @Inject() private readonly dataSource: DataSource) {}
+
+  /**
+   * Application-layer defense in depth on top of Postgres RLS.
+   * `TenantSubscriber` stamps tenant_id on every insert and refuses
+   * cross-tenant updates regardless of the SQL the service emitted.
+   * The resolver pulls the active tenant id out of the per-request
+   * `AsyncLocalStorage` populated by `TenantAlsInterceptor`. See
+   * `src/auth/tenant-als.ts` for the why behind the ALS bridge.
+   *
+   * Registered here rather than in `DataSourceOptions.subscribers`
+   * because TypeORM only accepts class refs in that field — pre-
+   * instantiated subscribers are silently dropped. Pushing onto
+   * `dataSource.subscribers` after init is the supported path for
+   * subscribers that need a captured-closure resolver.
+   */
+  onModuleInit(): void {
+    this.dataSource.subscribers.push(new TenantSubscriber(resolveTenantIdFromAls));
+  }
+}

@@ -4,7 +4,7 @@ Tenant-aware authorization for NestJS + TypeORM, built on top of [`@casl/ability
 
 > **⚠️ Alpha / experimental — do not use in production yet.**
 >
-> `nest-warden` is **0.4.2-alpha**. The API surface is stabilizing but
+> `nest-warden` is **0.4.3-alpha**. The API surface is stabilizing but
 > remains subject to breaking changes between alpha releases. Names,
 > signatures, and module boundaries may shift before v1.0.
 >
@@ -13,7 +13,7 @@ Tenant-aware authorization for NestJS + TypeORM, built on top of [`@casl/ability
 > for at least one quarter" — plus the API freeze and library-coupling
 > hardening tracked in the [public roadmap](./docs/pages/docs/roadmap/things-to-do.md)
 > (Themes 4 and 8). Until then, treat every alpha release as
-> experimental and pin to an exact version (`"nest-warden": "0.4.2-alpha"`)
+> experimental and pin to an exact version (`"nest-warden": "0.4.3-alpha"`)
 > rather than a range.
 
 ## Why
