@@ -3,10 +3,12 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "start": "node demo.mjs"
+    "start": "node demo.mjs",
+    "verify-fix": "node demo-with-fix.mjs"
   },
   "dependencies": {
     "@casl/ability": "6.8.1",
-    "@casl/prisma": "1.4.1"
+    "@casl/prisma": "1.4.1",
+    "@ucast/mongo": "2.4.3"
   }
 }
