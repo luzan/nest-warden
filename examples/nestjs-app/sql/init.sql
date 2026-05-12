@@ -74,6 +74,40 @@ CREATE TABLE IF NOT EXISTS custom_roles (
   UNIQUE (tenant_id, name)
 );
 
+-- Users: tenant-AGNOSTIC identities. A single user (`sub` claim in a
+-- JWT) can hold memberships in zero or more tenants. The `users` row
+-- is the durable record of "who is this person at all"; the
+-- per-tenant role grant lives in `tenant_memberships`. This split is
+-- the production-realistic trust-boundary shape that
+-- `examples/nestjs-app/src/auth/jwt.guard.ts` enforces: the JWT only
+-- carries `sub` + `tenantId`, and the server reads `roles` from the
+-- DB rather than trusting any role claim that might be carried in
+-- the token.
+CREATE TABLE IF NOT EXISTS users (
+  id          uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
+  email       text        NOT NULL UNIQUE,
+  name        text        NOT NULL,
+  created_at  timestamptz NOT NULL DEFAULT now()
+);
+
+-- Tenant memberships: the source of truth for "which roles does this
+-- user hold in this tenant." Composite PK `(user_id, tenant_id)`
+-- enforces one membership row per (user, tenant) pair; `roles` is a
+-- JSON array of role names defined in
+-- `src/auth/permission-registry.ts`. Intentionally NOT under RLS —
+-- the JWT guard needs cross-tenant visibility to verify that the
+-- requested tenant context is one the user actually belongs to (the
+-- whole point of the server-side lookup). Defense in depth here is
+-- the FK constraints plus the `WHERE user_id = ... AND tenant_id =
+-- ...` predicate in the lookup query.
+CREATE TABLE IF NOT EXISTS tenant_memberships (
+  user_id     uuid        NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  tenant_id   uuid        NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  roles       jsonb       NOT NULL DEFAULT '[]'::jsonb,
+  created_at  timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (user_id, tenant_id)
+);
+
 -- Payments: tenant-scoped, foreign-keyed to merchants. Demonstrates
 -- multi-hop reverse lookups (Payment → Merchant → Agent).
 CREATE TABLE IF NOT EXISTS payments (

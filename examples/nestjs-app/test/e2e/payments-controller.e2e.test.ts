@@ -5,10 +5,8 @@ import { type INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import type { StartedPostgreSqlContainer } from '@testcontainers/postgresql';
 import { startPostgresWithSchema } from '../fixtures/postgres-fixture.js';
+import { authHeader } from '../fixtures/auth-helpers.js';
 import {
-  AGENT_ALICE,
-  AGENT_BOB,
-  AGENT_CAROL,
   MERCHANT_M1,
   MERCHANT_M2,
   PAYMENT_P1,
@@ -19,6 +17,13 @@ import {
   PAYMENT_P6,
   TENANT_ACME,
   TENANT_BETA,
+  USER_ALICE,
+  USER_BOB,
+  USER_CAROL,
+  USER_CAUTIOUS_REFUNDER_ACME,
+  USER_ISO_ADMIN_ACME,
+  USER_PAYMENT_APPROVER_ACME,
+  USER_PLATFORM_ADMIN_ACME,
   seedFixture,
 } from '../fixtures/seed.js';
 import { AppModule } from '../../src/app.module.js';
@@ -93,14 +98,6 @@ describe('GET/POST /payments — multi-tenant access control', () => {
     await container.stop();
   }, 30_000);
 
-  const fakeAuth = (
-    userId: string,
-    tenantId: string,
-    roles: string[],
-  ): Record<string, string> => ({
-    'x-fake-user': JSON.stringify({ userId, tenantId, roles }),
-  });
-
   describe('reverse lookup: GET /payments (list)', () => {
     // ACME payments per the seed: p1 (m1, $50, captured), p2 (m1, $120,
     // pending), p3 (m2, $75, captured), p5 (m1, $80, authorized),
@@ -115,7 +112,7 @@ describe('GET/POST /payments — multi-tenant access control', () => {
     it('Alice (ACME agent, assigned to m1+m2) sees every ACME payment via the two-hop graph', async () => {
       const res = await request(app.getHttpServer())
         .get('/payments')
-        .set(fakeAuth(AGENT_ALICE, TENANT_ACME, ['agent']));
+        .set(authHeader(USER_ALICE, TENANT_ACME));
 
       expect(res.status).toBe(200);
       const ids = (res.body as { id: string }[]).map((r) => r.id).sort();
@@ -125,7 +122,7 @@ describe('GET/POST /payments — multi-tenant access control', () => {
     it('Bob (ACME agent, assigned only to m2) sees only m2 payments', async () => {
       const res = await request(app.getHttpServer())
         .get('/payments')
-        .set(fakeAuth(AGENT_BOB, TENANT_ACME, ['agent']));
+        .set(authHeader(USER_BOB, TENANT_ACME));
 
       expect(res.status).toBe(200);
       const ids = (res.body as { id: string }[]).map((r) => r.id).sort();
@@ -135,7 +132,7 @@ describe('GET/POST /payments — multi-tenant access control', () => {
     it('Carol (BETA agent) sees only BETA payments — zero ACME rows', async () => {
       const res = await request(app.getHttpServer())
         .get('/payments')
-        .set(fakeAuth(AGENT_CAROL, TENANT_BETA, ['agent']));
+        .set(authHeader(USER_CAROL, TENANT_BETA));
 
       expect(res.status).toBe(200);
       const ids = (res.body as { id: string }[]).map((r) => r.id);
@@ -145,7 +142,7 @@ describe('GET/POST /payments — multi-tenant access control', () => {
     it('an ISO admin (ACME) sees every ACME payment via `manage`', async () => {
       const res = await request(app.getHttpServer())
         .get('/payments')
-        .set(fakeAuth('any-user-id', TENANT_ACME, ['iso-admin']));
+        .set(authHeader(USER_ISO_ADMIN_ACME, TENANT_ACME));
 
       expect(res.status).toBe(200);
       const ids = (res.body as { id: string }[]).map((r) => r.id).sort();
@@ -155,7 +152,7 @@ describe('GET/POST /payments — multi-tenant access control', () => {
     it('a platform-admin sees every payment across tenants (cross-tenant opt-out)', async () => {
       const res = await request(app.getHttpServer())
         .get('/payments')
-        .set(fakeAuth('any-user-id', TENANT_ACME, ['platform-admin']));
+        .set(authHeader(USER_PLATFORM_ADMIN_ACME, TENANT_ACME));
 
       expect(res.status).toBe(200);
       const ids = (res.body as { id: string }[]).map((r) => r.id).sort();
@@ -174,7 +171,7 @@ describe('GET/POST /payments — multi-tenant access control', () => {
     it('Alice can read p1 (in m1, assigned)', async () => {
       const res = await request(app.getHttpServer())
         .get(`/payments/${PAYMENT_P1}`)
-        .set(fakeAuth(AGENT_ALICE, TENANT_ACME, ['agent']));
+        .set(authHeader(USER_ALICE, TENANT_ACME));
       expect(res.status).toBe(200);
       expect((res.body as { id: string }).id).toBe(PAYMENT_P1);
     });
@@ -182,14 +179,14 @@ describe('GET/POST /payments — multi-tenant access control', () => {
     it('Bob cannot read p1 (in m1, not assigned to m1)', async () => {
       const res = await request(app.getHttpServer())
         .get(`/payments/${PAYMENT_P1}`)
-        .set(fakeAuth(AGENT_BOB, TENANT_ACME, ['agent']));
+        .set(authHeader(USER_BOB, TENANT_ACME));
       expect([403, 404]).toContain(res.status);
     });
 
     it('Bob can read p3 (in m2, assigned)', async () => {
       const res = await request(app.getHttpServer())
         .get(`/payments/${PAYMENT_P3}`)
-        .set(fakeAuth(AGENT_BOB, TENANT_ACME, ['agent']));
+        .set(authHeader(USER_BOB, TENANT_ACME));
       expect(res.status).toBe(200);
       expect((res.body as { id: string }).id).toBe(PAYMENT_P3);
     });
@@ -197,7 +194,7 @@ describe('GET/POST /payments — multi-tenant access control', () => {
     it('Carol (BETA) cannot read p1 (ACME) — cross-tenant', async () => {
       const res = await request(app.getHttpServer())
         .get(`/payments/${PAYMENT_P1}`)
-        .set(fakeAuth(AGENT_CAROL, TENANT_BETA, ['agent']));
+        .set(authHeader(USER_CAROL, TENANT_BETA));
       // RLS makes the row invisible; service returns 404.
       expect([403, 404]).toContain(res.status);
     });
@@ -214,7 +211,7 @@ describe('GET/POST /payments — multi-tenant access control', () => {
     it('an approver in ACME can capture p5 (status=authorized)', async () => {
       const res = await request(app.getHttpServer())
         .post(`/payments/${PAYMENT_P5}/capture`)
-        .set(fakeAuth('any-user-id', TENANT_ACME, ['payment-approver']));
+        .set(authHeader(USER_PAYMENT_APPROVER_ACME, TENANT_ACME));
 
       expect(res.status).toBe(200);
       expect((res.body as { id: string; status: string }).status).toBe('captured');
@@ -223,7 +220,7 @@ describe('GET/POST /payments — multi-tenant access control', () => {
     it('the same approver cannot capture p1 (status=captured already) — 404', async () => {
       const res = await request(app.getHttpServer())
         .post(`/payments/${PAYMENT_P1}/capture`)
-        .set(fakeAuth('any-user-id', TENANT_ACME, ['payment-approver']));
+        .set(authHeader(USER_PAYMENT_APPROVER_ACME, TENANT_ACME));
 
       expect([403, 404]).toContain(res.status);
     });
@@ -233,7 +230,7 @@ describe('GET/POST /payments — multi-tenant access control', () => {
       // Tenant predicate kicks in before the status check.
       const res = await request(app.getHttpServer())
         .post(`/payments/${PAYMENT_P4}/capture`)
-        .set(fakeAuth('any-user-id', TENANT_ACME, ['payment-approver']));
+        .set(authHeader(USER_PAYMENT_APPROVER_ACME, TENANT_ACME));
 
       expect(res.status).toBe(404);
     });
@@ -254,7 +251,7 @@ describe('GET/POST /payments — multi-tenant access control', () => {
     it('a cautious refunder can refund p1 ($50, under threshold)', async () => {
       const res = await request(app.getHttpServer())
         .post(`/payments/${PAYMENT_P1}/refund`)
-        .set(fakeAuth('any-user-id', TENANT_ACME, ['cautious-refunder']));
+        .set(authHeader(USER_CAUTIOUS_REFUNDER_ACME, TENANT_ACME));
 
       expect(res.status).toBe(200);
       expect((res.body as { id: string; status: string }).status).toBe('refunded');
@@ -263,7 +260,7 @@ describe('GET/POST /payments — multi-tenant access control', () => {
     it('the same cautious refunder cannot refund p6 ($250, over threshold)', async () => {
       const res = await request(app.getHttpServer())
         .post(`/payments/${PAYMENT_P6}/refund`)
-        .set(fakeAuth('any-user-id', TENANT_ACME, ['cautious-refunder']));
+        .set(authHeader(USER_CAUTIOUS_REFUNDER_ACME, TENANT_ACME));
 
       expect([403, 404]).toContain(res.status);
     });
@@ -274,7 +271,7 @@ describe('GET/POST /payments — multi-tenant access control', () => {
       // no negative rule should succeed.
       const res = await request(app.getHttpServer())
         .post(`/payments/${PAYMENT_P6}/refund`)
-        .set(fakeAuth('any-user-id', TENANT_ACME, ['payment-approver']));
+        .set(authHeader(USER_PAYMENT_APPROVER_ACME, TENANT_ACME));
 
       expect(res.status).toBe(200);
       expect((res.body as { id: string; status: string }).status).toBe('refunded');
@@ -291,7 +288,7 @@ describe('GET/POST /payments — multi-tenant access control', () => {
     // in isolation.
 
     it('Alice: every payment in the list is readable individually', async () => {
-      const auth = fakeAuth(AGENT_ALICE, TENANT_ACME, ['agent']);
+      const auth = authHeader(USER_ALICE, TENANT_ACME);
 
       const list = await request(app.getHttpServer()).get('/payments').set(auth);
       expect(list.status).toBe(200);

@@ -1,5 +1,77 @@
 # Changelog
 
+## [0.3.2-alpha] - 2026-05-12
+
+### Changed
+
+- **Example app — production-style JWT auth (Theme 7 PR A).** Replaced
+  the demonstration-only `FakeAuthGuard` with a real `JwtAuthGuard`
+  end-to-end. Tokens are HS256, signed with a dev secret in source
+  (`src/auth/tokens.ts`) that production overrides via `JWT_SECRET`.
+  Each request mints a short-lived (15 min) token via `@nestjs/jwt`'s
+  `JwtService`; the guard verifies signature + freshness, then
+  resolves the user's roles from the new `tenant_memberships` table
+  via `MembershipService` — never from the JWT claims. This is the
+  load-bearing trust-boundary property: a tampered `tenantId` claim
+  or a stale token cannot escalate privileges past the server-side
+  lookup. New `auth.e2e.test.ts` exercises the golden path
+  (valid token → 200), the rejection paths (missing header → 401;
+  no membership in the claimed tenant → 403), and the cross-tenant
+  trust-boundary observable through "Pat the platform admin"
+  (memberships in both ACME and BETA with different roles per
+  tenant). Four `describe.skip` placeholders are seeded for Theme 7
+  PR E (tampered payload, tampered signature, expired token,
+  algorithm-confusion). E2E count: 52 → 58.
+
+### Added
+
+- **Auth schema in `examples/nestjs-app/sql/init.sql`.** New `users`
+  table (tenant-agnostic identity) and `tenant_memberships` table
+  (composite PK `(user_id, tenant_id)` with a `roles jsonb` column).
+  Intentionally NOT under RLS — the JWT guard's lookup runs before
+  the tenant context is set on the session, so RLS would deny the
+  lookup itself. Defense in depth is the explicit
+  `WHERE user_id = ? AND tenant_id = ?` predicate in
+  `MembershipService.findRoles`. Captured as
+  `examples/nestjs-app/FINDINGS.md` § 11.
+
+- **Auth-layer entities + service.** New
+  `examples/nestjs-app/src/auth/user.entity.ts`,
+  `tenant-membership.entity.ts`, `membership.service.ts`,
+  `jwt.guard.ts`, `tokens.ts`, and `auth.module.ts`. Auth module
+  groups `JwtModule.registerAsync` + `TypeOrmModule.forFeature`
+  for the two entities + `MembershipService`. The guard is wired
+  as `APP_GUARD` in `app.module.ts`, replacing `FakeAuthGuard`
+  (now deleted).
+
+- **E2E fixture: `signTokenFor` + `authHeader` helpers.**
+  `test/fixtures/auth-helpers.ts` instantiates a standalone
+  `JwtService` with the same `DEV_JWT_SECRET` the runtime uses
+  so tests never disagree with the guard about which key to sign
+  with. The `signTokenFor` helper accepts an `expiresIn` override
+  for the future adversarial-scenario tests; it also accepts a
+  `secret` override so PR E can exercise the wrong-secret path.
+
+- **Seed expansion: per-role users + cross-tenant Pat.** The seed
+  inserts 16 users with one role-shape each (cleanly isolates
+  per-role test assertions), plus `Pat` who has memberships in BOTH
+  tenants (iso-admin in ACME, merchant-viewer-public in BETA) to
+  make the cross-tenant trust-boundary check observable in test
+  output. Beth (a new agent) is the multi-role merge fixture —
+  `['agent', 'merchant-approver']` in ACME with an
+  `agent_merchant_assignments` row so the agent rule's `$relatedTo`
+  resolves correctly.
+
+### Fixed
+
+- **Postgres parameter-type inference on jsonb-only INSERTs.** The
+  seed's `tenant_memberships` INSERT initially errored with
+  `could not determine data type of parameter $N` even though the
+  parameter was clearly a uuid. Root cause: when the only typed
+  neighbour in a row is a `jsonb` literal cast, the inferencer
+  doesn't fall back to the column type. Fix is one explicit `::uuid`
+  cast per parameter slot. Captured as `FINDINGS.md` § 12.
+
 ## [0.3.1-alpha] - 2026-05-12
 
 ### Fixed
