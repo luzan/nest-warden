@@ -57,19 +57,50 @@ DB_PORT=55432 pnpm start:dev
 The E2E suite uses testcontainers, which always picks a free random
 port — no manual port management needed there.
 
-In another terminal, hit the API with the fake-auth header:
+In another terminal, mint a short-lived JWT and hit the API with it.
+The example signs tokens with the dev secret defined in
+[`src/auth/tokens.ts`](./src/auth/tokens.ts) (`dev-secret-not-for-production`);
+production deployments override `JWT_SECRET` with a high-entropy value
+from a secret manager.
 
 ```bash
-# Alice — agent in ACME, assigned to m1+m2
-curl -H "x-fake-user: $(printf '%s' '{"userId":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaa0001","tenantId":"11111111-1111-1111-1111-111111111111","roles":["agent"]}' | tr -d '\n')" \
-  http://localhost:3000/merchants
-# → 2 results: Acme Coffee + Acme Plumbing
+# Mint a token (Node one-liner — same secret the guard verifies against)
+ALICE_TOKEN=$(node -e "
+  const { JwtService } = require('@nestjs/jwt');
+  const svc = new JwtService({ secret: 'dev-secret-not-for-production' });
+  console.log(svc.sign(
+    { sub: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaa0001',
+      tenantId: '11111111-1111-1111-1111-111111111111' },
+    { expiresIn: '15m' }
+  ));
+")
 
-# Carol — agent in BETA
-curl -H "x-fake-user: $(printf '%s' '{"userId":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaa0003","tenantId":"22222222-2222-2222-2222-222222222222","roles":["agent"]}' | tr -d '\n')" \
-  http://localhost:3000/merchants
-# → 1 result: Beta Bakery
+curl -H "Authorization: Bearer $ALICE_TOKEN" http://localhost:3000/merchants
+# → 2 results: Acme Coffee + Acme Plumbing
+#   Note: roles are NOT in the token — JwtAuthGuard reads them from
+#   `tenant_memberships` so a tampered token cannot escalate privileges.
 ```
+
+**The trust-boundary check in action.** Pat the platform admin has
+memberships in both tenants (iso-admin in ACME, viewer in BETA).
+Minting two tokens for the same `sub` with different `tenantId`
+claims produces two different role sets, because the server reads
+roles from the DB at request time:
+
+```bash
+# Same sub (USER_PAT), different tenantId claims:
+PAT_ACME=$(node -e "/* sign for tenantId=ACME */ ...")
+PAT_BETA=$(node -e "/* sign for tenantId=BETA */ ...")
+
+curl -H "Authorization: Bearer $PAT_ACME" http://localhost:3000/merchants
+# → all 3 ACME merchants (iso-admin)
+curl -H "Authorization: Bearer $PAT_BETA" http://localhost:3000/merchants
+# → 1 BETA merchant (merchant-viewer-public — narrower scope)
+```
+
+If Pat's token claims a tenantId he has no membership in, the server
+returns 403 — exactly the "tampered claim" failure mode the
+server-side lookup is designed to catch.
 
 ## Run the test suite
 
@@ -77,22 +108,35 @@ curl -H "x-fake-user: $(printf '%s' '{"userId":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaa
 pnpm test:e2e            # Requires Docker; spins up Postgres in testcontainers
 ```
 
-The E2E suite has two top-level files:
+The E2E suite has these top-level files:
 
   1. `rls-isolation.e2e.test.ts` — **proves RLS works** at the DB layer
      independent of the application. Even with `SELECT * FROM merchants`
      and no WHERE, Postgres returns only rows matching the active
      `app.current_tenant_id`.
 
-  2. `merchants-controller.e2e.test.ts` — exercises the full stack:
-     fake-auth header → guard → tenant-context-interceptor → policies
-     guard → service → `accessibleBy(...)` → SQL → DB → RLS → response.
+  2. `auth.e2e.test.ts` — exercises `JwtAuthGuard` end-to-end:
+     valid token → 200, missing header → 401, valid token but no
+     membership in the claimed tenant → 403. Includes a
+     `describe.skip` block of adversarial scenarios (tampered
+     signature, expired token, alg-confusion) tracked under Theme 7
+     PR E in the roadmap.
+
+  3. `merchants-controller.e2e.test.ts` + `payments-controller.e2e.test.ts`
+     — exercise the full stack: JWT guard → tenant-context-interceptor
+     → policies guard → service → `accessibleBy(...)` → SQL → DB →
+     RLS → response.
+
+  4. `common.e2e.test.ts` — cross-cutting pagination DTO behaviour
+     shared between merchants and payments.
 
 ## What's intentionally not in this example
 
-- **Real authentication.** The fake-auth header is for demonstration. A
-  production app would replace `FakeAuthGuard` with a JWT guard that
-  verifies the token and looks up `tenant_memberships`.
+- **Token issuance UI.** The example mints tokens directly via the
+  `JwtService` from `@nestjs/jwt` for demo simplicity. A real app
+  would have a `/auth/login` endpoint that verifies a password
+  against the `users` table (or a federated identity provider) and
+  returns the signed token.
 - **Pagination, sorting, search.** Out of scope; the listing endpoints
   return everything the user can see.
 - **Migrations / schema management.** `sql/init.sql` handles bootstrap;

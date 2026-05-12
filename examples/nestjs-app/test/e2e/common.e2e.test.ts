@@ -5,7 +5,8 @@ import { type INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import type { StartedPostgreSqlContainer } from '@testcontainers/postgresql';
 import { startPostgresWithSchema } from '../fixtures/postgres-fixture.js';
-import { TENANT_ACME, seedFixture } from '../fixtures/seed.js';
+import { authHeader } from '../fixtures/auth-helpers.js';
+import { TENANT_ACME, USER_ISO_ADMIN_ACME, seedFixture } from '../fixtures/seed.js';
 import { AppModule } from '../../src/app.module.js';
 import { setExampleDataSourceConfig } from '../../src/database/datasource.config.js';
 import type { DataSource } from 'typeorm';
@@ -57,19 +58,11 @@ describe('common — shared pagination DTO across modules', () => {
     await container.stop();
   }, 30_000);
 
-  const fakeAuth = (
-    userId: string,
-    tenantId: string,
-    roles: string[],
-  ): Record<string, string> => ({
-    'x-fake-user': JSON.stringify({ userId, tenantId, roles }),
-  });
-
   describe('PaginationQuery shared between /merchants and /payments', () => {
     it('limit=2 on /merchants returns at most 2 rows', async () => {
       const res = await request(app.getHttpServer())
         .get('/merchants?limit=2')
-        .set(fakeAuth('any-user-id', TENANT_ACME, ['iso-admin']));
+        .set(authHeader(USER_ISO_ADMIN_ACME, TENANT_ACME));
 
       expect(res.status).toBe(200);
       expect((res.body as unknown[]).length).toBeLessThanOrEqual(2);
@@ -78,14 +71,14 @@ describe('common — shared pagination DTO across modules', () => {
     it('limit=2 on /payments returns at most 2 rows', async () => {
       const res = await request(app.getHttpServer())
         .get('/payments?limit=2')
-        .set(fakeAuth('any-user-id', TENANT_ACME, ['iso-admin']));
+        .set(authHeader(USER_ISO_ADMIN_ACME, TENANT_ACME));
 
       expect(res.status).toBe(200);
       expect((res.body as unknown[]).length).toBeLessThanOrEqual(2);
     });
 
     it('offset=1&limit=1 skips the first row of /payments', async () => {
-      const auth = fakeAuth('any-user-id', TENANT_ACME, ['iso-admin']);
+      const auth = authHeader(USER_ISO_ADMIN_ACME, TENANT_ACME);
 
       const full = await request(app.getHttpServer()).get('/payments').set(auth);
       const page = await request(app.getHttpServer())
@@ -105,7 +98,7 @@ describe('common — shared pagination DTO across modules', () => {
     it('oversized limit is clamped to the configured maximum', async () => {
       const res = await request(app.getHttpServer())
         .get('/payments?limit=10000')
-        .set(fakeAuth('any-user-id', TENANT_ACME, ['iso-admin']));
+        .set(authHeader(USER_ISO_ADMIN_ACME, TENANT_ACME));
 
       // The clamp itself is implementation-defined; we just assert that
       // the request succeeds AND the response is bounded — i.e., the
@@ -124,7 +117,7 @@ describe('common — shared pagination DTO across modules', () => {
       // coerces zero/negative values back to the default.
       const res = await request(app.getHttpServer())
         .get('/payments?limit=0')
-        .set(fakeAuth('any-user-id', TENANT_ACME, ['iso-admin']));
+        .set(authHeader(USER_ISO_ADMIN_ACME, TENANT_ACME));
 
       expect(res.status).toBe(200);
       expect((res.body as unknown[]).length).toBeGreaterThan(0);

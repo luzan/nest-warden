@@ -5,16 +5,25 @@ import { type INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import type { StartedPostgreSqlContainer } from '@testcontainers/postgresql';
 import { startPostgresWithSchema } from '../fixtures/postgres-fixture.js';
+import { authHeader } from '../fixtures/auth-helpers.js';
 import {
-  AGENT_ALICE,
-  AGENT_BOB,
-  AGENT_CAROL,
   MERCHANT_M1,
   MERCHANT_M2,
   MERCHANT_M3,
   MERCHANT_M4,
   TENANT_ACME,
   TENANT_BETA,
+  USER_ALICE,
+  USER_BOB,
+  USER_BETH,
+  USER_CAROL,
+  USER_CAUTIOUS_APPROVER_ACME,
+  USER_ISO_ADMIN_ACME,
+  USER_MERCHANT_APPROVER_ACME,
+  USER_MERCHANT_APPROVER_BETA,
+  USER_MERCHANT_VIEWER_ACME,
+  USER_TENANT_AUDITOR_ACME,
+  USER_TENANT_AUDITOR_BETA,
   seedFixture,
 } from '../fixtures/seed.js';
 import { AppModule } from '../../src/app.module.js';
@@ -37,10 +46,13 @@ import type { DataSource } from 'typeorm';
  *      library, RLS would prevent the leak. The previous test file
  *      proves that property at the database layer.
  *
- * Authentication is faked via an `x-fake-user` header — production code
- * would use a real JWT guard. The fake header carries a JSON object
- * with `userId`, `tenantId`, `roles`. The example's `FakeAuthGuard`
- * (in `src/auth/`) populates `request.user` from it.
+ * Authentication uses the real `JwtAuthGuard`. Each request mints a
+ * short-lived HS256 token via `authHeader(userId, tenantId)` from
+ * `test/fixtures/auth-helpers.ts`; the guard verifies the signature
+ * + freshness, looks up the user's roles in `tenant_memberships`,
+ * and populates `request.user`. There is no role claim in the
+ * token — roles come from the DB at request time. See
+ * `src/auth/jwt.guard.ts` for the trust-boundary contract.
  */
 describe('GET /merchants — multi-tenant access control', () => {
   let container: StartedPostgreSqlContainer;
@@ -72,19 +84,11 @@ describe('GET /merchants — multi-tenant access control', () => {
     await container.stop();
   }, 30_000);
 
-  const fakeAuth = (
-    userId: string,
-    tenantId: string,
-    roles: string[],
-  ): Record<string, string> => ({
-    'x-fake-user': JSON.stringify({ userId, tenantId, roles }),
-  });
-
   describe('reverse lookup: GET /merchants (list)', () => {
     it('Alice (ACME agent, assigned to m1+m2) sees exactly her assignments', async () => {
       const res = await request(app.getHttpServer())
         .get('/merchants')
-        .set(fakeAuth(AGENT_ALICE, TENANT_ACME, ['agent']));
+        .set(authHeader(USER_ALICE, TENANT_ACME));
 
       expect(res.status).toBe(200);
       const ids = (res.body as { id: string }[]).map((r) => r.id).sort();
@@ -94,7 +98,7 @@ describe('GET /merchants — multi-tenant access control', () => {
     it('Bob (ACME agent, assigned only to m2) sees only m2', async () => {
       const res = await request(app.getHttpServer())
         .get('/merchants')
-        .set(fakeAuth(AGENT_BOB, TENANT_ACME, ['agent']));
+        .set(authHeader(USER_BOB, TENANT_ACME));
 
       expect(res.status).toBe(200);
       expect((res.body as { id: string }[]).map((r) => r.id)).toEqual([MERCHANT_M2]);
@@ -103,7 +107,7 @@ describe('GET /merchants — multi-tenant access control', () => {
     it('Carol (BETA agent) sees only BETA merchants', async () => {
       const res = await request(app.getHttpServer())
         .get('/merchants')
-        .set(fakeAuth(AGENT_CAROL, TENANT_BETA, ['agent']));
+        .set(authHeader(USER_CAROL, TENANT_BETA));
 
       expect(res.status).toBe(200);
       const ids = (res.body as { id: string }[]).map((r) => r.id);
@@ -115,7 +119,7 @@ describe('GET /merchants — multi-tenant access control', () => {
     it('an ISO admin (ACME) sees all ACME merchants regardless of agent assignments', async () => {
       const res = await request(app.getHttpServer())
         .get('/merchants')
-        .set(fakeAuth('any-user-id', TENANT_ACME, ['iso-admin']));
+        .set(authHeader(USER_ISO_ADMIN_ACME, TENANT_ACME));
 
       expect(res.status).toBe(200);
       const ids = (res.body as { id: string }[]).map((r) => r.id);
@@ -134,7 +138,7 @@ describe('GET /merchants — multi-tenant access control', () => {
     it('an approver in ACME sees only the pending merchant (m2)', async () => {
       const res = await request(app.getHttpServer())
         .get('/merchants/approvable')
-        .set(fakeAuth('any-user-id', TENANT_ACME, ['merchant-approver']));
+        .set(authHeader(USER_MERCHANT_APPROVER_ACME, TENANT_ACME));
 
       expect(res.status).toBe(200);
       const ids = (res.body as { id: string }[]).map((r) => r.id);
@@ -144,7 +148,7 @@ describe('GET /merchants — multi-tenant access control', () => {
     it('an approver in BETA sees nothing (BETA has no pending merchants)', async () => {
       const res = await request(app.getHttpServer())
         .get('/merchants/approvable')
-        .set(fakeAuth('any-user-id', TENANT_BETA, ['merchant-approver']));
+        .set(authHeader(USER_MERCHANT_APPROVER_BETA, TENANT_BETA));
 
       expect(res.status).toBe(200);
       expect(res.body as unknown[]).toEqual([]);
@@ -161,7 +165,7 @@ describe('GET /merchants — multi-tenant access control', () => {
     it('a user with the tenant-auditor custom role can list ACME merchants', async () => {
       const res = await request(app.getHttpServer())
         .get('/merchants')
-        .set(fakeAuth('any-user-id', TENANT_ACME, ['tenant-auditor']));
+        .set(authHeader(USER_TENANT_AUDITOR_ACME, TENANT_ACME));
 
       expect(res.status).toBe(200);
       // tenant-auditor → permissions=['merchants:read'] → sees all
@@ -177,7 +181,7 @@ describe('GET /merchants — multi-tenant access control', () => {
       // gets no rule expansion.
       const res = await request(app.getHttpServer())
         .get('/merchants')
-        .set(fakeAuth('any-user-id', TENANT_BETA, ['tenant-auditor']));
+        .set(authHeader(USER_TENANT_AUDITOR_BETA, TENANT_BETA));
 
       // Without any rules, the policy guard denies — 403 from guard
       // OR a passing 200 with empty body if read happens to be
@@ -210,7 +214,7 @@ describe('GET /merchants — multi-tenant access control', () => {
     it('a user with [agent, merchant-approver] sees all merchants in their tenant', async () => {
       const res = await request(app.getHttpServer())
         .get('/merchants')
-        .set(fakeAuth(AGENT_BOB, TENANT_ACME, ['agent', 'merchant-approver']));
+        .set(authHeader(USER_BETH, TENANT_ACME));
 
       expect(res.status).toBe(200);
       const ids = (res.body as { id: string }[]).map((r) => r.id);
@@ -220,7 +224,7 @@ describe('GET /merchants — multi-tenant access control', () => {
     it('the same user listing approvable merchants gets only the pending one', async () => {
       const res = await request(app.getHttpServer())
         .get('/merchants/approvable')
-        .set(fakeAuth(AGENT_BOB, TENANT_ACME, ['agent', 'merchant-approver']));
+        .set(authHeader(USER_BETH, TENANT_ACME));
 
       expect(res.status).toBe(200);
       const ids = (res.body as { id: string }[]).map((r) => r.id);
@@ -241,7 +245,7 @@ describe('GET /merchants — multi-tenant access control', () => {
     it('a cautious approver gets [] (the only pending merchant is excluded by cannot)', async () => {
       const res = await request(app.getHttpServer())
         .get('/merchants/approvable')
-        .set(fakeAuth('any-user-id', TENANT_ACME, ['cautious-approver']));
+        .set(authHeader(USER_CAUTIOUS_APPROVER_ACME, TENANT_ACME));
 
       expect(res.status).toBe(200);
       expect(res.body as unknown[]).toEqual([]);
@@ -250,7 +254,7 @@ describe('GET /merchants — multi-tenant access control', () => {
     it('the same cautious approver can still read all merchants — cannot is action-scoped', async () => {
       const res = await request(app.getHttpServer())
         .get('/merchants')
-        .set(fakeAuth('any-user-id', TENANT_ACME, ['cautious-approver']));
+        .set(authHeader(USER_CAUTIOUS_APPROVER_ACME, TENANT_ACME));
 
       expect(res.status).toBe(200);
       const ids = (res.body as { id: string }[]).map((r) => r.id);
@@ -262,7 +266,7 @@ describe('GET /merchants — multi-tenant access control', () => {
     it('Alice can read m1 (assigned)', async () => {
       const res = await request(app.getHttpServer())
         .get(`/merchants/${MERCHANT_M1}`)
-        .set(fakeAuth(AGENT_ALICE, TENANT_ACME, ['agent']));
+        .set(authHeader(USER_ALICE, TENANT_ACME));
       expect(res.status).toBe(200);
       expect((res.body as { id: string }).id).toBe(MERCHANT_M1);
     });
@@ -274,14 +278,14 @@ describe('GET /merchants — multi-tenant access control', () => {
       // also be acceptable; we accept either.
       const res = await request(app.getHttpServer())
         .get(`/merchants/${MERCHANT_M1}`)
-        .set(fakeAuth(AGENT_BOB, TENANT_ACME, ['agent']));
+        .set(authHeader(USER_BOB, TENANT_ACME));
       expect([403, 404]).toContain(res.status);
     });
 
     it('Carol cannot read m1 (different tenant)', async () => {
       const res = await request(app.getHttpServer())
         .get(`/merchants/${MERCHANT_M1}`)
-        .set(fakeAuth(AGENT_CAROL, TENANT_BETA, ['agent']));
+        .set(authHeader(USER_CAROL, TENANT_BETA));
       // 404 (not found) is also acceptable here — RLS returns no rows for
       // cross-tenant lookups, so the merchant simply isn't visible. The
       // controller maps "not found" to 404. We accept either 403 (caught
@@ -300,7 +304,7 @@ describe('GET /merchants — multi-tenant access control', () => {
     it('a public viewer sees only id, name, and status', async () => {
       const res = await request(app.getHttpServer())
         .get(`/merchants/${MERCHANT_M1}/projected`)
-        .set(fakeAuth('any-user-id', TENANT_ACME, ['merchant-viewer-public']));
+        .set(authHeader(USER_MERCHANT_VIEWER_ACME, TENANT_ACME));
 
       expect(res.status).toBe(200);
       const keys = Object.keys(res.body as Record<string, unknown>).sort();
@@ -310,7 +314,7 @@ describe('GET /merchants — multi-tenant access control', () => {
     it('an iso-admin sees every field on the same projected endpoint', async () => {
       const res = await request(app.getHttpServer())
         .get(`/merchants/${MERCHANT_M1}/projected`)
-        .set(fakeAuth('any-user-id', TENANT_ACME, ['iso-admin']));
+        .set(authHeader(USER_ISO_ADMIN_ACME, TENANT_ACME));
 
       expect(res.status).toBe(200);
       const keys = Object.keys(res.body as Record<string, unknown>).sort();
@@ -329,7 +333,7 @@ describe('GET /merchants — multi-tenant access control', () => {
     it('an iso-admin can update an in-tenant merchant', async () => {
       const res = await request(app.getHttpServer())
         .patch(`/merchants/${MERCHANT_M1}`)
-        .set(fakeAuth('any-user-id', TENANT_ACME, ['iso-admin']))
+        .set(authHeader(USER_ISO_ADMIN_ACME, TENANT_ACME))
         .send({ status: 'closed' });
 
       expect(res.status).toBe(200);
@@ -339,7 +343,7 @@ describe('GET /merchants — multi-tenant access control', () => {
     it('an agent (no update rule) is denied by the policy guard', async () => {
       const res = await request(app.getHttpServer())
         .patch(`/merchants/${MERCHANT_M1}`)
-        .set(fakeAuth(AGENT_ALICE, TENANT_ACME, ['agent']))
+        .set(authHeader(USER_ALICE, TENANT_ACME))
         .send({ status: 'active' });
       expect([403, 404]).toContain(res.status);
     });
@@ -350,7 +354,7 @@ describe('GET /merchants — multi-tenant access control', () => {
       // NotFoundException — same response shape as for an unknown id.
       const res = await request(app.getHttpServer())
         .patch(`/merchants/${MERCHANT_M4}`)
-        .set(fakeAuth('any-user-id', TENANT_ACME, ['iso-admin']))
+        .set(authHeader(USER_ISO_ADMIN_ACME, TENANT_ACME))
         .send({ status: 'closed' });
       expect(res.status).toBe(404);
     });
@@ -358,21 +362,21 @@ describe('GET /merchants — multi-tenant access control', () => {
     it('an iso-admin can delete an in-tenant merchant', async () => {
       const res = await request(app.getHttpServer())
         .delete(`/merchants/${MERCHANT_M3}`)
-        .set(fakeAuth('any-user-id', TENANT_ACME, ['iso-admin']));
+        .set(authHeader(USER_ISO_ADMIN_ACME, TENANT_ACME));
 
       expect(res.status).toBe(204);
 
       // Confirm it's gone.
       const followUp = await request(app.getHttpServer())
         .get(`/merchants/${MERCHANT_M3}`)
-        .set(fakeAuth('any-user-id', TENANT_ACME, ['iso-admin']));
+        .set(authHeader(USER_ISO_ADMIN_ACME, TENANT_ACME));
       expect(followUp.status).toBe(404);
     });
 
     it('an iso-admin deleting a cross-tenant merchant gets 404', async () => {
       const res = await request(app.getHttpServer())
         .delete(`/merchants/${MERCHANT_M4}`)
-        .set(fakeAuth('any-user-id', TENANT_ACME, ['iso-admin']));
+        .set(authHeader(USER_ISO_ADMIN_ACME, TENANT_ACME));
       expect(res.status).toBe(404);
     });
   });
@@ -393,7 +397,7 @@ describe('GET /merchants — multi-tenant access control', () => {
     it('default listing excludes the soft-deleted merchant', async () => {
       const res = await request(app.getHttpServer())
         .get('/merchants')
-        .set(fakeAuth('any-user-id', TENANT_ACME, ['iso-admin']));
+        .set(authHeader(USER_ISO_ADMIN_ACME, TENANT_ACME));
 
       expect(res.status).toBe(200);
       const ids = (res.body as { id: string }[]).map((r) => r.id).sort();
@@ -405,7 +409,7 @@ describe('GET /merchants — multi-tenant access control', () => {
     it('with_deleted=true surfaces soft-deleted rows (still tenant-scoped)', async () => {
       const res = await request(app.getHttpServer())
         .get('/merchants?with_deleted=true')
-        .set(fakeAuth('any-user-id', TENANT_ACME, ['iso-admin']));
+        .set(authHeader(USER_ISO_ADMIN_ACME, TENANT_ACME));
 
       expect(res.status).toBe(200);
       const ids = (res.body as { id: string }[]).map((r) => r.id).sort();

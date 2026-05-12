@@ -4,7 +4,10 @@ import { TypeOrmModule, getRepositoryToken } from '@nestjs/typeorm';
 import { TenantAbilityModule } from 'nest-warden/nestjs';
 import type { ForbiddenException } from '@nestjs/common';
 import type { Repository } from 'typeorm';
-import { FakeAuthGuard } from './auth/fake-auth.guard.js';
+import { AuthModule } from './auth/auth.module.js';
+import { JwtAuthGuard } from './auth/jwt.guard.js';
+import { TenantMembership } from './auth/tenant-membership.entity.js';
+import { User } from './auth/user.entity.js';
 import { defineAbilities, type AppAbility } from './auth/permissions.js';
 import { permissions, systemRoles } from './auth/permission-registry.js';
 import { Tenant } from './entities/tenant.entity.js';
@@ -25,11 +28,21 @@ void (null as unknown as ForbiddenException); // type-only retain
     TypeOrmModule.forRootAsync({
       useFactory: () => ({
         ...getExampleDataSourceConfig(),
-        entities: [Tenant, Merchant, Agent, Payment, AgentMerchantAssignment, CustomRole],
+        entities: [
+          Tenant,
+          Merchant,
+          Agent,
+          Payment,
+          AgentMerchantAssignment,
+          CustomRole,
+          User,
+          TenantMembership,
+        ],
         synchronize: false,
         logging: false,
       }),
     }),
+    AuthModule,
     TenantAbilityModule.forRootAsync<AppAbility>({
       // CustomRole repository injected so `loadCustomRoles` can hit
       // the database. RFC 001 Phase C — bridges the typed registry
@@ -41,15 +54,19 @@ void (null as unknown as ForbiddenException); // type-only retain
         graph: relationshipGraph,
         permissions,
         systemRoles,
-        // For the example, the request comes pre-authenticated by FakeAuthGuard
-        // which sets request.user. In production, replace with a JWT lookup
-        // that hits a `tenant_memberships` table to verify the claim.
+        // The request comes pre-authenticated by `JwtAuthGuard`, which
+        // verified the token signature, freshness, and the
+        // server-side membership before setting `request.user`. The
+        // `roles` array on `request.user` is sourced from
+        // `tenant_memberships` — never the JWT claims — so a
+        // tampered or stale token cannot escalate privileges past
+        // this point. See `src/auth/jwt.guard.ts` for the contract.
         resolveTenantContext: (req) => {
           const user = (req as { user?: { userId: string; tenantId: string; roles: string[] } })
             .user;
           if (!user)
             throw new Error(
-              'No authenticated user — FakeAuthGuard must run before TenantContextInterceptor.',
+              'No authenticated user — JwtAuthGuard must run before TenantContextInterceptor.',
             );
           return {
             tenantId: user.tenantId,
@@ -76,9 +93,9 @@ void (null as unknown as ForbiddenException); // type-only retain
     PaymentsModule,
   ],
   providers: [
-    // FakeAuthGuard runs BEFORE the TenantPoliciesGuard so request.user is
+    // JwtAuthGuard runs BEFORE the TenantPoliciesGuard so request.user is
     // available when the policies guard / interceptor read it.
-    { provide: APP_GUARD, useClass: FakeAuthGuard },
+    { provide: APP_GUARD, useClass: JwtAuthGuard },
   ],
 })
 export class AppModule {}

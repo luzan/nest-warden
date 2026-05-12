@@ -289,3 +289,60 @@ project for users who copy it out of the repo.
 
 **Where this lives.** `examples/nestjs-app/README.md` mentions the
 rebuild dance in the "Run the test suite" section.
+
+## 11. `tenant_memberships` must NOT live under RLS
+
+**Symptom.** Tempting to add `ENABLE ROW LEVEL SECURITY` + tenant-scoped
+policy to `tenant_memberships`, matching every other tenant-bearing
+table in the schema. Doing so breaks `JwtAuthGuard`: the lookup
+returns zero rows for every legitimate request and every user gets
+403.
+
+**Root cause.** The membership lookup runs BEFORE any tenant context
+is set on the session — that's the whole point. The guard's job is
+to *establish* the tenant context by verifying the user's claim
+against the membership row. If the table is under RLS, the lookup
+runs with no `app.current_tenant_id` set, the policy denies, the
+guard sees no row, and the request is rejected.
+
+Defense in depth here is the explicit `WHERE user_id = ? AND
+tenant_id = ?` predicate in `MembershipService.findRoles`, plus the
+FK constraints. RLS would be a second layer for everything the user
+DOES after auth resolves — but it can't gate the auth resolution
+itself.
+
+**Fix.** Keep `tenant_memberships` (and the `users` table) un-RLS'd.
+Comment the omission explicitly in `sql/init.sql` so a future
+reviewer doesn't "fix" it.
+
+## 12. Postgres parameter-type inference fails when a row's only typed value is jsonb
+
+**Symptom.** A multi-row INSERT like
+
+```sql
+INSERT INTO tenant_memberships(user_id, tenant_id, roles) VALUES
+  ($1, $16, '["agent"]'::jsonb),
+  ($2, $16, '["agent"]'::jsonb),
+  ...
+```
+
+errors with `could not determine data type of parameter $16` —
+even though `$16` is clearly a uuid (the third column in the same
+row is `'["agent"]'::jsonb`).
+
+**Root cause.** Postgres's parameter-type inferencer looks at each
+row independently. The `'…'::jsonb` literal has an explicit cast,
+so the engine knows the third column is `jsonb`. But the second
+column (`$16`) has no context — the column type alone isn't enough
+when the same parameter slot is repeated across rows and only
+literal-cast neighbours.
+
+**Fix.** Add an explicit `::uuid` cast on the uuid parameters:
+
+```sql
+($1, $16::uuid, '["agent"]'::jsonb)
+```
+
+One cast per parameter slot is enough; subsequent uses of the same
+`$N` inherit the inferred type. See `test/fixtures/seed.ts` for the
+applied pattern.
