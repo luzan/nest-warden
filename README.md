@@ -4,7 +4,7 @@ Tenant-aware authorization for NestJS + TypeORM, built on top of [`@casl/ability
 
 > **⚠️ Alpha / experimental — do not use in production yet.**
 >
-> `nest-warden` is **0.5.1-alpha**. The API surface is stabilizing but
+> `nest-warden` is **0.5.2-alpha**. The API surface is stabilizing but
 > remains subject to breaking changes between alpha releases. Names,
 > signatures, and module boundaries may shift before v1.0.
 >
@@ -13,7 +13,7 @@ Tenant-aware authorization for NestJS + TypeORM, built on top of [`@casl/ability
 > for at least one quarter" — plus the API freeze and library-coupling
 > hardening tracked in the [public roadmap](./docs/pages/docs/roadmap/things-to-do.md)
 > (Themes 4 and 8). Until then, treat every alpha release as
-> experimental and pin to an exact version (`"nest-warden": "0.5.1-alpha"`)
+> experimental and pin to an exact version (`"nest-warden": "0.5.2-alpha"`)
 > rather than a range.
 
 ## What this is
@@ -75,7 +75,7 @@ tested in an example app that ships with the library.
   The runtime tenant guarantee and `accessibleBy()` for TypeORM are
   additions on top of a sound foundation, not patches for a leaky
   one. (The history of that framing — and why it changed — is in
-  CHANGELOG `0.5.1-alpha`.)
+  CHANGELOG `0.5.2-alpha`.)
 - **Not a Zanzibar / OpenFGA replacement.** Single app, single
   database. No cross-service relationship propagation. See
   [`/docs/get-started/when-to-use/`](./docs/pages/docs/get-started/when-to-use.md)

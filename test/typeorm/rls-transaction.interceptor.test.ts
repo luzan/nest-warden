@@ -1,7 +1,7 @@
 import 'reflect-metadata';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { firstValueFrom, of, throwError } from 'rxjs';
-import type { CallHandler, ExecutionContext } from '@nestjs/common';
+import { Logger, type CallHandler, type ExecutionContext } from '@nestjs/common';
 import type { DataSource, QueryRunner } from 'typeorm';
 import { RlsTransactionInterceptor } from '../../src/typeorm/rls-transaction.interceptor.js';
 import { TenantContextService } from '../../src/nestjs/tenant-context.service.js';
@@ -42,6 +42,24 @@ const fakeExecCtx = (): ExecutionContext =>
   }) as unknown as ExecutionContext;
 
 describe('RlsTransactionInterceptor', () => {
+  // The interceptor logs a one-time startup warning when instantiated.
+  // Reset the class-level flag between tests so each test that cares
+  // can assert from a clean slate. We also stub Logger.prototype.warn
+  // so the noise doesn't leak into test output and so we can assert
+  // on call counts where the test needs to.
+  let warnSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    (
+      RlsTransactionInterceptor as unknown as { startupWarningEmitted: boolean }
+    ).startupWarningEmitted = false;
+    warnSpy = vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    warnSpy.mockRestore();
+  });
+
   it('skips the transaction when no tenant context is set', async () => {
     const qr = buildMockQueryRunner();
     const ds = buildMockDataSource(qr);
@@ -121,5 +139,52 @@ describe('RlsTransactionInterceptor', () => {
     await expect(firstValueFrom(interceptor.intercept(fakeExecCtx(), next))).rejects.toThrow(
       'string-error',
     );
+  });
+
+  describe('startup warning (Theme 9D demotion)', () => {
+    it('emits a one-time warning when the interceptor is first instantiated', () => {
+      const qr = buildMockQueryRunner();
+      const ds = buildMockDataSource(qr);
+      const tenantContext = new TenantContextService<string>();
+
+      new RlsTransactionInterceptor(ds, tenantContext);
+
+      expect(warnSpy).toHaveBeenCalledTimes(1);
+      const message = warnSpy.mock.calls[0]?.[0] as string;
+      expect(message).toMatch(/RlsTransactionInterceptor/);
+      expect(message).toMatch(/Auto-setting the RLS session variable/);
+    });
+
+    it('does not re-emit on subsequent constructions in the same module load', () => {
+      // The flag persists across instances. Per-request scope is what
+      // we're protecting against — without the static flag, every
+      // request would log on cold-start instances. With it, only the
+      // first construction in the module's lifetime logs.
+      const qr = buildMockQueryRunner();
+      const ds = buildMockDataSource(qr);
+      const tenantContext = new TenantContextService<string>();
+
+      new RlsTransactionInterceptor(ds, tenantContext);
+      new RlsTransactionInterceptor(ds, tenantContext);
+      new RlsTransactionInterceptor(ds, tenantContext);
+
+      expect(warnSpy).toHaveBeenCalledTimes(1);
+    });
+
+    it('suppresses the warning when silentStartupWarning is true', () => {
+      const qr = buildMockQueryRunner();
+      const ds = buildMockDataSource(qr);
+      const tenantContext = new TenantContextService<string>();
+
+      new RlsTransactionInterceptor(ds, tenantContext, { silentStartupWarning: true });
+
+      expect(warnSpy).not.toHaveBeenCalled();
+      // And the flag stays `false` so a subsequent unsilenced
+      // instance still logs on its first construction.
+      expect(
+        (RlsTransactionInterceptor as unknown as { startupWarningEmitted: boolean })
+          .startupWarningEmitted,
+      ).toBe(false);
+    });
   });
 });

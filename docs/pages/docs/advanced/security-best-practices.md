@@ -113,9 +113,14 @@ provider, which checks live state on every refresh.
 ### 3. Enable Postgres RLS as defense in depth
 
 Every nest-warden integration with Postgres should enable RLS on
-every tenant-scoped table. The library's `RlsTransactionInterceptor`
-handles the per-request session variable; your migration creates
-the policy. See the [RLS guide](/docs/integration/rls-postgres/).
+every tenant-scoped table. Your migration creates the policy; one
+of three strategies sets the per-request session variable. See the
+[RLS guide](/docs/integration/rls-postgres/) for policy authoring,
+and the
+[Auto-setting the RLS session variable recipe](/docs/advanced/recipes/#auto-setting-the-rls-session-variable)
+for the wiring options (the shipped `RlsTransactionInterceptor` is
+the simplest; a TypeORM-subscriber or scoped-transaction approach
+fits high-RPS workloads better).
 
 The reason: RLS catches the cases the library can't. A teammate who
 loads `dataSource.getRepository(Merchant)` instead of going through
@@ -132,7 +137,7 @@ cross-tenant grant."
 
 ### 5. Never bypass `validateRules` in production
 
-The `validateRulesAtBuild: false` escape hatch exists for
+The `builder.validateRules: false` escape hatch exists for
 library-internal tests. Setting it false in production removes the
 structural guarantee that every rule has either a tenant predicate
 or an explicit `crossTenant` marker. There is no legitimate reason
@@ -215,11 +220,12 @@ Run through this list before declaring a feature production-ready:
 
 - [ ] Every `defineAbilities` rule is either auto-injected with the
   tenant predicate (`builder.can`) or explicitly cross-tenant
-  (`builder.crossTenant.can`). `validateRulesAtBuild` enforces this.
+  (`builder.crossTenant.can`). `builder.validateRules` enforces this.
 - [ ] `resolveTenantContext` does a server-side membership lookup;
   no fields come unverified from the JWT.
 - [ ] Postgres RLS is enabled on every tenant-scoped table.
-- [ ] `RlsTransactionInterceptor` is registered.
+- [ ] One of the three RLS session-variable strategies is wired (see the
+  [recipe](/docs/advanced/recipes/#auto-setting-the-rls-session-variable)).
 - [ ] Every controller route reaches a tenant-scoped repository
   (or `accessibleBy`); raw `dataSource.getRepository(...)` calls
   are confined to admin / migration code paths.

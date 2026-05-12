@@ -1,5 +1,72 @@
 # Changelog
 
+## [0.5.2-alpha] - 2026-05-12
+
+### Changed
+
+- **`RlsTransactionInterceptor` demoted from primary integration to
+  one of three recipe-level strategies (Theme 9D).** The interceptor
+  still ships and works — nothing imported by existing consumers
+  changes — but the docs no longer position it as the recommended
+  default.
+
+  **Why.** The interceptor wraps every authenticated request
+  (including read-only routes) in a Postgres transaction and holds
+  a pooled connection for the request's lifetime. For high-RPS
+  workloads that's meaningful pool pressure. The implementation is
+  also short (~30 lines of meaningful logic); most of the value is
+  in the *explanation* (the `set_config` vs `SET LOCAL` distinction,
+  the fail-closed default of `current_setting(..., true)`) rather
+  than the importable class.
+
+  **What's new in the code:**
+
+  - Added a class-level startup warning. The interceptor's
+    constructor logs a one-time `Logger.warn` on the first
+    instantiation in a module load, flagging the pool-pressure
+    trade-off and pointing at the new recipe. Subsequent
+    instantiations within the same module load don't re-log.
+  - Added `silentStartupWarning?: boolean` to
+    `RlsTransactionOptions`. Pass `true` via the `MTC_RLS_OPTIONS`
+    provider once you've audited the trade-off and don't want the
+    notice on cold start.
+
+  **What's new in the docs:**
+
+  - New section in [`/docs/advanced/recipes/`](https://github.com/luzan/nest-warden/blob/main/docs/pages/docs/advanced/recipes.md#auto-setting-the-rls-session-variable):
+    "Auto-setting the RLS session variable" — covers all three
+    strategies (interceptor; TypeORM subscriber + AsyncLocalStorage;
+    scoped transactions inside services), the PgBouncer caveat for
+    each, and a brief explainer on why `SET LOCAL` doesn't accept
+    bound parameters (and `set_config(...)` does).
+  - `docs/integration/rls-postgres.md`: the "Auto-set with
+    `RlsTransactionInterceptor`" section + "Performance considerations"
+    section both deleted; replaced with a 3-strategy summary that
+    links to the recipe for details.
+  - `docs/advanced/security-best-practices.md`: checklist item
+    "`RlsTransactionInterceptor` is registered" replaced with
+    "One of the three RLS session-variable strategies is wired."
+
+  **No deprecation, no removal.** The interceptor's export, behaviour,
+  and existing tests are unchanged beyond the new warning. Consumers
+  who've wired it and validated the trade-off don't need to do
+  anything; optionally pass `silentStartupWarning: true` to suppress
+  the cold-start log line.
+
+  Three new tests pin the warning behaviour: fires once on the first
+  construction, doesn't re-fire on subsequent constructions in the
+  same module load, suppressed by `silentStartupWarning: true`.
+  Coverage remains 100% (385 tests; was 382).
+
+### Fixed
+
+- **Docs sidebar version was hardcoded as `v0.2.0-alpha`** and had
+  drifted four releases without anyone updating it.
+  `docs/components/Layout.tsx` now imports the library's
+  `package.json` directly and renders `v{libraryPkg.version}`. Next.js
+  inlines JSON at build time, so this is zero-runtime-cost and
+  drift-proof — every release moves the sidebar header automatically.
+
 ## [0.5.1-alpha] - 2026-05-12
 
 ### Changed
