@@ -14,6 +14,12 @@ import type { PermissionRegistry, RoleRegistry } from './types.js';
  * Phase A of RFC 001. Phase B (builder integration) calls this from
  * `applyRoles`; Phase C (custom roles) calls it from the load path.
  *
+ * @experimental
+ * Used by the (also experimental) `loadCustomRoles` path; the
+ * signature and thrown-error shape may change before v1.0 as the
+ * tenant-managed-roles surface stabilises. See Theme 9 in the
+ * roadmap.
+ *
  * @param permissions - The permission registry returned by
  *   `definePermissions`.
  * @param roleName - The role being validated. Used purely for the
@@ -42,6 +48,12 @@ export function validatePermissionReferences(
  * set to fail closed (the request proceeds with no custom roles
  * applied; behavior implemented by the caller of this validator in
  * Phase C).
+ *
+ * @experimental
+ * Used by the (also experimental) `loadCustomRoles` path; the
+ * signature and thrown-error shape may change before v1.0 as the
+ * tenant-managed-roles surface stabilises. See Theme 9 in the
+ * roadmap.
  *
  * @param systemRoles - The system role registry returned by
  *   `defineRoles`.

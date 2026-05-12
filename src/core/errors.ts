@@ -130,6 +130,12 @@ export class DuplicateRelationshipError extends NestWardenError {
  * in the permission registry. See RFC 001 (Roles abstraction) for the
  * registry contract — permission references are validated at module
  * bootstrap and at every `loadCustomRoles` invocation.
+ *
+ * @experimental
+ * Part of the tenant-managed-roles surface (`loadCustomRoles` +
+ * `CustomRoleEntry`). The class name, the public fields, and the
+ * message shape may change before v1.0 as the surface stabilises.
+ * See Theme 9 in the roadmap.
  */
 export class UnknownPermissionError extends NestWardenError {
   constructor(
@@ -149,6 +155,12 @@ export class UnknownPermissionError extends NestWardenError {
  * same name. System role names are reserved (RFC 001 § Q4); the request
  * fails closed with an empty role set if a `loadCustomRoles` callback
  * returns a colliding entry.
+ *
+ * @experimental
+ * Part of the tenant-managed-roles surface (`loadCustomRoles` +
+ * `CustomRoleEntry`). The class name, the public fields, and the
+ * message shape may change before v1.0 as the surface stabilises.
+ * See Theme 9 in the roadmap.
  */
 export class SystemRoleCollisionError extends NestWardenError {
   constructor(public readonly roleName: string) {
