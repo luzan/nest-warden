@@ -1,4 +1,4 @@
-import { Inject, Injectable, Scope } from '@nestjs/common';
+import { Inject, Injectable, Logger, type LoggerService, Scope } from '@nestjs/common';
 import { type AnyAbility, createMongoAbility } from '@casl/ability';
 import { TenantAbilityBuilder } from '../core/tenant-ability.builder.js';
 import type { TenantIdValue } from '../core/tenant-id.js';
@@ -30,10 +30,22 @@ export class TenantAbilityFactory<
   TAbility extends AnyAbility = AnyAbility,
   TId extends TenantIdValue = string,
 > {
+  /**
+   * Logger used to report custom-role dropouts (collisions with
+   * system roles, unknown-permission references). Resolved at
+   * construction time from `options.logger` if the consumer
+   * supplied one, otherwise a `Logger` instance tagged with this
+   * class name — which honours NestJS's global log-level
+   * configuration the same way any other framework log does.
+   */
+  private readonly logger: LoggerService;
+
   constructor(
     @Inject(MTC_OPTIONS) private readonly options: TenantAbilityModuleOptions<TAbility, TId>,
     @Inject(TenantContextService) private readonly contextService: TenantContextService<TId>,
-  ) {}
+  ) {
+    this.logger = options.logger ?? new Logger(TenantAbilityFactory.name);
+  }
 
   /**
    * Build the ability for the current request. Pass the raw request so
@@ -89,7 +101,7 @@ export class TenantAbilityFactory<
         try {
           assertNoSystemRoleCollision(systemRoles, role.name);
         } catch (err) {
-          console.warn(
+          this.warnDropout(
             `[nest-warden] Dropping custom role "${role.name}" for tenant ` +
               `"${String(context.tenantId)}" because it collides with a system ` +
               `role of the same name. The system role wins. ` +
@@ -103,7 +115,7 @@ export class TenantAbilityFactory<
         try {
           validatePermissionReferences(permissions, role.name, role.permissions);
         } catch (err) {
-          console.warn(
+          this.warnDropout(
             `[nest-warden] Dropping custom role "${role.name}" for tenant ` +
               `"${String(context.tenantId)}" because it references an ` +
               `unknown permission. ` +
@@ -120,5 +132,15 @@ export class TenantAbilityFactory<
     }
 
     return surviving;
+  }
+
+  /**
+   * Forward a custom-role dropout to the configured logger unless
+   * `silentRoleDropouts` is `true`. The dropout itself still happens
+   * either way — only the surfaced log call is gated.
+   */
+  private warnDropout(message: string): void {
+    if (this.options.silentRoleDropouts === true) return;
+    this.logger.warn(message);
   }
 }

@@ -1,4 +1,4 @@
-import type { ExecutionContext } from '@nestjs/common';
+import type { ExecutionContext, LoggerService } from '@nestjs/common';
 import type { AbilityClass, AnyAbility, CreateAbility } from '@casl/ability';
 import type { TenantContext } from '../core/tenant-context.js';
 import type { TenantAbilityBuilder } from '../core/tenant-ability.builder.js';
@@ -110,10 +110,15 @@ export interface TenantAbilityModuleOptions<
    *
    *   - Custom roles whose `name` collides with a system role are
    *     silently dropped from the request's role set (the system
-   *     role takes precedence). The library logs the collision via
-   *     `console.warn` so it's visible in CI / staging.
+   *     role takes precedence).
    *   - Custom roles referencing unknown permissions are silently
    *     dropped from the request's role set.
+   *
+   * Both dropouts are reported through the configured {@link logger}
+   * (defaults to NestJS's `Logger`) so misconfiguration is visible in
+   * CI / staging. Set {@link silentRoleDropouts} to `true` to suppress
+   * the log calls in environments where you've already audited the
+   * tenant's role configuration upstream.
    *
    * Cross-request caching is the consumer's responsibility — wrap
    * the callback with Redis or whatever fits your latency budget.
@@ -157,4 +162,30 @@ export interface TenantAbilityModuleOptions<
    * them yourself when migrating an existing app incrementally.
    */
   readonly registerAsGlobal?: boolean;
+
+  /**
+   * Logger used by the per-request factory to report custom-role
+   * dropouts (Theme 8E). Accepts any {@link LoggerService} — the
+   * NestJS-provided `Logger`, a Pino adapter, a Winston wrapper, a
+   * test capture, etc.
+   *
+   * When omitted, the factory falls back to `new Logger('TenantAbilityFactory')`
+   * which honours the application's global NestJS log-level
+   * configuration. This replaces the prior `console.warn` calls so
+   * dropouts route through the same pipeline as the rest of the
+   * application's logs.
+   */
+  readonly logger?: LoggerService;
+
+  /**
+   * When `true`, suppress the per-request log calls for custom-role
+   * dropouts (collisions with system roles and unknown-permission
+   * references). Defaults to `false` — dropouts are logged.
+   *
+   * Use this only in environments where the tenant's custom-role
+   * configuration is already audited upstream and the per-request
+   * log noise outweighs the misconfiguration signal. The dropouts
+   * themselves still happen — only the logging is suppressed.
+   */
+  readonly silentRoleDropouts?: boolean;
 }

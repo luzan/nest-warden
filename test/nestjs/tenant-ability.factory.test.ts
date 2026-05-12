@@ -1,11 +1,32 @@
 import 'reflect-metadata';
 import { describe, expect, it } from 'vitest';
+import type { LoggerService } from '@nestjs/common';
 import { createMongoAbility, type MongoAbility } from '@casl/ability';
 import { TenantAbilityFactory } from '../../src/nestjs/tenant-ability.factory.js';
 import { TenantContextService } from '../../src/nestjs/tenant-context.service.js';
 import type { TenantAbilityModuleOptions } from '../../src/nestjs/options.js';
 import type { TenantContext } from '../../src/core/tenant-context.js';
 import { definePermissions, defineRoles } from '../../src/core/permissions/index.js';
+
+/**
+ * Build a capturing logger that satisfies the `LoggerService` shape.
+ * Used by every test that asserts on the dropout warnings — the
+ * factory previously called `console.warn` directly; Theme 8E
+ * (0.4.0-alpha) routes those calls through `options.logger`.
+ */
+function captureLogger(): { logger: LoggerService; messages: string[] } {
+  const messages: string[] = [];
+  const logger: LoggerService = {
+    log: () => {},
+    error: () => {},
+    warn: (message: unknown) => {
+      messages.push(String(message));
+    },
+    debug: () => {},
+    verbose: () => {},
+  };
+  return { logger, messages };
+}
 
 type AppAbility = MongoAbility;
 const ctx: TenantContext<string> = { tenantId: 't1', subjectId: 'u1', roles: ['agent'] };
@@ -231,40 +252,61 @@ describe('TenantAbilityFactory', () => {
     });
 
     it('drops custom roles colliding with a system role name (logs warning)', async () => {
-      const warnings: string[] = [];
-      const originalWarn = console.warn;
-      console.warn = (...args: unknown[]) => {
-        warnings.push(args.map(String).join(' '));
-      };
+      const { logger, messages } = captureLogger();
 
-      try {
-        const { factory, svc } = build({
-          resolveTenantContext: () => ctx,
-          permissions,
-          systemRoles,
-          loadCustomRoles: () => [
-            { name: 'admin', permissions: ['merchants:read'] }, // collides
-            { name: 'good-custom', permissions: ['merchants:read'] },
-          ],
-          defineAbilities: (builder, c) => builder.applyRoles(c.roles),
-        });
-        svc.set({ ...ctx, roles: ['admin', 'good-custom'] });
+      const { factory, svc } = build({
+        resolveTenantContext: () => ctx,
+        permissions,
+        systemRoles,
+        logger,
+        loadCustomRoles: () => [
+          { name: 'admin', permissions: ['merchants:read'] }, // collides
+          { name: 'good-custom', permissions: ['merchants:read'] },
+        ],
+        defineAbilities: (builder, c) => builder.applyRoles(c.roles),
+      });
+      svc.set({ ...ctx, roles: ['admin', 'good-custom'] });
 
-        const ability = await factory.build();
-        // System admin survives — full access.
-        expect(ability.can('approve', 'Merchant')).toBe(true);
-        // Collision was warned about.
-        expect(warnings.some((w) => w.includes('admin') && w.includes('collides'))).toBe(true);
-      } finally {
-        console.warn = originalWarn;
-      }
+      const ability = await factory.build();
+      // System admin survives — full access.
+      expect(ability.can('approve', 'Merchant')).toBe(true);
+      // Collision was warned about via the configured logger.
+      expect(messages.some((w) => w.includes('admin') && w.includes('collides'))).toBe(true);
     });
 
     it('drops custom roles referencing unknown permissions (logs warning)', async () => {
-      const warnings: string[] = [];
-      const originalWarn = console.warn;
+      const { logger, messages } = captureLogger();
+
+      const { factory, svc } = build({
+        resolveTenantContext: () => ctx,
+        permissions,
+        systemRoles,
+        logger,
+        loadCustomRoles: () => [
+          { name: 'broken', permissions: ['merchants:read', 'does-not-exist'] },
+          { name: 'fine', permissions: ['merchants:read'] },
+        ],
+        defineAbilities: (builder) => builder.applyRoles(['broken', 'fine']),
+      });
+      svc.set(ctx);
+
+      const ability = await factory.build();
+      // The "broken" role is dropped; "fine" survives so read is allowed.
+      expect(ability.can('read', 'Merchant')).toBe(true);
+      expect(messages.some((w) => w.includes('broken') && w.includes('unknown permission'))).toBe(
+        true,
+      );
+    });
+
+    it('routes dropouts to the injected logger (and not via console.warn)', async () => {
+      // Belt-and-suspenders test: prove the migration off console.warn
+      // is complete. A spy on console.warn must NOT be invoked while
+      // the captured logger DOES receive the call.
+      const { logger, messages } = captureLogger();
+      const originalConsoleWarn = console.warn;
+      const consoleCalls: unknown[][] = [];
       console.warn = (...args: unknown[]) => {
-        warnings.push(args.map(String).join(' '));
+        consoleCalls.push(args);
       };
 
       try {
@@ -272,23 +314,61 @@ describe('TenantAbilityFactory', () => {
           resolveTenantContext: () => ctx,
           permissions,
           systemRoles,
-          loadCustomRoles: () => [
-            { name: 'broken', permissions: ['merchants:read', 'does-not-exist'] },
-            { name: 'fine', permissions: ['merchants:read'] },
-          ],
-          defineAbilities: (builder) => builder.applyRoles(['broken', 'fine']),
+          logger,
+          loadCustomRoles: () => [{ name: 'admin', permissions: ['merchants:read'] }], // collides
+          defineAbilities: (builder) => builder.applyRoles(['admin']),
         });
         svc.set(ctx);
 
-        const ability = await factory.build();
-        // The "broken" role is dropped; "fine" survives so read is allowed.
-        expect(ability.can('read', 'Merchant')).toBe(true);
-        expect(warnings.some((w) => w.includes('broken') && w.includes('unknown permission'))).toBe(
-          true,
-        );
+        await factory.build();
+
+        expect(messages.length).toBe(1);
+        expect(consoleCalls.length).toBe(0);
       } finally {
-        console.warn = originalWarn;
+        console.warn = originalConsoleWarn;
       }
+    });
+
+    it('respects silentRoleDropouts: true — the dropout still happens but the log is suppressed', async () => {
+      const { logger, messages } = captureLogger();
+
+      const { factory, svc } = build({
+        resolveTenantContext: () => ctx,
+        permissions,
+        systemRoles,
+        logger,
+        silentRoleDropouts: true,
+        loadCustomRoles: () => [
+          { name: 'admin', permissions: ['merchants:read'] }, // collides
+          { name: 'good-custom', permissions: ['merchants:read'] },
+        ],
+        defineAbilities: (builder, c) => builder.applyRoles(c.roles),
+      });
+      svc.set({ ...ctx, roles: ['admin', 'good-custom'] });
+
+      const ability = await factory.build();
+      // The dropout still occurred — the system 'admin' wins, so
+      // approve is granted. The custom 'admin' was discarded.
+      expect(ability.can('approve', 'Merchant')).toBe(true);
+      // … but the logger was NOT invoked.
+      expect(messages).toEqual([]);
+    });
+
+    it('constructs cleanly without options.logger (falls back to default Logger)', async () => {
+      // Smoke test: the factory must build and run dropouts without
+      // throwing when no logger is supplied. We don't assert on
+      // stdout here — that's NestJS Logger internals — only that
+      // the request completes.
+      const { factory, svc } = build({
+        resolveTenantContext: () => ctx,
+        permissions,
+        systemRoles,
+        loadCustomRoles: () => [{ name: 'admin', permissions: ['merchants:read'] }], // collides
+        defineAbilities: (builder) => builder.applyRoles(['admin']),
+      });
+      svc.set(ctx);
+
+      await expect(factory.build()).resolves.toBeDefined();
     });
 
     it('returns no custom roles when loader is not configured (default empty)', async () => {

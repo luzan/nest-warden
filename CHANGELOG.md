@@ -1,5 +1,37 @@
 # Changelog
 
+## [0.4.0-alpha] - 2026-05-12
+
+### Added
+
+- **`TenantAbilityModuleOptions.logger` + `silentRoleDropouts` (Theme 8E).**
+  Custom-role dropouts (collisions with system roles, unknown-permission
+  references) used to call `console.warn` directly — bypassing the
+  application's NestJS logging pipeline and forcing tests to spy on
+  the global console object. They now route through a configurable
+  `LoggerService`:
+
+  - `logger?: LoggerService` — accepts any NestJS-compatible logger
+    (Pino adapter, Winston wrapper, test capture, etc.). Defaults to
+    `new Logger(TenantAbilityFactory.name)` which honours the
+    application's global log-level configuration.
+  - `silentRoleDropouts?: boolean` — opt-in flag to suppress the
+    per-request dropout log calls in environments where the tenant's
+    custom-role configuration is already audited upstream. The
+    dropouts themselves still happen; only the logging is gated.
+
+  Three new specs in `test/nestjs/tenant-ability.factory.test.ts`
+  pin the contract: dropouts route through the injected logger and
+  not `console.warn`; `silentRoleDropouts: true` suppresses without
+  affecting the dropout behaviour; the factory builds cleanly when
+  no logger is provided (falls back to the default). The two prior
+  collision / unknown-permission specs migrated from the
+  `console.warn` spy to the captured-logger pattern.
+
+  No behaviour change for consumers who don't set either option —
+  log messages are identical, just routed through `Logger` instead
+  of `console`. Minor bump because the public options surface grew.
+
 ## [0.3.2-alpha] - 2026-05-12
 
 ### Changed
