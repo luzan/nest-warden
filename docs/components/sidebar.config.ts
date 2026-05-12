@@ -26,6 +26,7 @@ export const sidebarSections: readonly SidebarSection[] = [
   {
     title: 'Core Concepts',
     links: [
+      { href: '/docs/core-concepts/tenancy-models', label: 'Tenancy Models' },
       { href: '/docs/core-concepts/tenant-context', label: 'Tenant Context' },
       { href: '/docs/core-concepts/tenant-builder', label: 'Tenant-aware Builder' },
       { href: '/docs/core-concepts/cross-tenant', label: 'Cross-tenant Opt-out' },
