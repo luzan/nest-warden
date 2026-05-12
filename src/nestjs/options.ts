@@ -101,6 +101,16 @@ export interface TenantAbilityModuleOptions<
    * Phase C — the bridge for non-technical tenant admins to compose
    * permissions through a UI without redeploying the application.
    *
+   * @experimental
+   * The shape of `CustomRoleEntry`, the validation error vocabulary
+   * (`UnknownPermissionError` / `SystemRoleCollisionError`), and the
+   * fail-closed dropout policy may change before v1.0. See Theme 9
+   * in the roadmap: https://github.com/luzan/nest-warden/blob/main/docs/pages/docs/roadmap/things-to-do.md#4b-scope-discipline-for-v10-theme-9
+   * If the API churns more than expected after production soak, the
+   * whole tenant-managed-roles surface may be extracted into a
+   * companion package post-v1.0. Pin to an exact version of
+   * `nest-warden` if you depend on this option.
+   *
    * The callback runs after `resolveTenantContext` and before
    * `defineAbilities`. The library memoizes the result per request,
    * so calling `applyRoles` multiple times in `defineAbilities`

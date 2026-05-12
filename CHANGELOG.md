@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.4.1-alpha] - 2026-05-12
+
+### Changed
+
+- **`@experimental` JSDoc on the tenant-managed-roles surface (Theme 9C).**
+  Documents that `loadCustomRoles`, `CustomRoleEntry`,
+  `validatePermissionReferences`, `assertNoSystemRoleCollision`, plus the
+  two custom-role-specific errors (`UnknownPermissionError`,
+  `SystemRoleCollisionError`) may change before v1.0 as the surface
+  goes through production soak. The annotation surfaces in IDE
+  tooltips and TypeDoc output; behaviour is unchanged. Counter-balance
+  to RFC 001 Phase C — the feature shipped, but the API stability
+  promise lags it. Pin to an exact `nest-warden` version if your
+  consumer code depends on these symbols.
+
+  Not marked experimental: `definePermissions`, `defineRoles`,
+  `applyRoles`, and the per-tenant-context primitives — RFC 001's
+  Phase A/B core is stable.
+
 ## [0.4.0-alpha] - 2026-05-12
 
 ### Added

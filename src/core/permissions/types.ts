@@ -70,6 +70,14 @@ export interface RoleDef<TPermission extends string = string> {
  *
  * Phase A defines the shape; the actual `loadCustomRoles` wiring lands
  * in Phase C.
+ *
+ * @experimental
+ * The fields here, and the validation error vocabulary the load path
+ * surfaces (`UnknownPermissionError` / `SystemRoleCollisionError`),
+ * may change before v1.0. See Theme 9 in the roadmap and the
+ * `loadCustomRoles` option in `TenantAbilityModuleOptions` for the
+ * full caveat. Pin to an exact version of `nest-warden` if you
+ * depend on this type.
  */
 export interface CustomRoleEntry<TPermission extends string = string> {
   readonly name: string;
