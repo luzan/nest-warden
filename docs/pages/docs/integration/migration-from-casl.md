@@ -196,6 +196,6 @@ rewrite using supported operators.
 
 ## See also
 
-- [Why nest-warden?](/docs/get-started/why/) — the four gaps in detail.
+- [Why nest-warden?](/docs/get-started/why/) — what the library is, what it adds, what it isn't.
 - [Tenant-aware Builder](/docs/core-concepts/tenant-builder/) — the new abstraction.
 - [`accessibleBy()`](/docs/integration/typeorm/#accessibleby-for-listing-endpoints) — the perf upgrade.

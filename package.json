@@ -1,6 +1,6 @@
 {
   "name": "nest-warden",
-  "version": "0.5.0-alpha",
+  "version": "0.5.1-alpha",
   "description": "nest-warden — tenant-aware authorization for NestJS + TypeORM, built on @casl/ability. First-class tenant scoping, relationship-graph traversal, and TypeORM reverse lookups (accessibleBy).",
   "repository": {
     "type": "git",
