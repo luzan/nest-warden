@@ -1,5 +1,51 @@
 # Changelog
 
+## [0.5.3-alpha] - 2026-05-13
+
+### Added
+
+- **Example app — adversarial JWT scenarios (Theme 7 PR E).** The
+  four `describe.skip` placeholders seeded in
+  `examples/nestjs-app/test/e2e/auth.e2e.test.ts` during the original
+  PR A (#20) are now real tests:
+
+  1. **Tampered payload.** Sign a valid token, mutate `sub`, re-encode,
+     keep the original signature. The HMAC over the new payload no
+     longer matches the carried signature → 401.
+  2. **Tampered signature.** Sign with a different secret. The
+     verifier checks the signature under the configured key → 401.
+  3. **Expired token.** Mint with negative `expiresIn` so the token
+     is already expired at request time → 401.
+  4. **Algorithm-confusion / alg: "none".** Manually construct a
+     JWT with `{ alg: "none" }` header and empty signature → 401,
+     because the JwtModule's `verifyOptions.algorithms: ['HS256']`
+     allow-list rejects the unsigned algorithm before the empty
+     signature is even consulted.
+
+  E2E count: 60 → 64 (the `4 skipped` line in earlier reports is gone).
+
+### Changed
+
+- **`examples/nestjs-app/src/auth/auth.module.ts` JWT verify hardened.**
+  Added `verifyOptions: { algorithms: ['HS256'] }` to
+  `JwtModule.registerAsync`. Also pinned `signOptions.algorithm: 'HS256'`
+  explicitly. The verify-side allow-list is the structural defense
+  against `alg: "none"` and HS/RS confusion attacks — a token whose
+  header advertises any algorithm outside this list is rejected
+  before the secret is consulted. The change is for the example app;
+  library behaviour is unchanged.
+
+### Notes
+
+- **Theme 9H — empty `test/integration/` and `test/e2e/` dirs at the
+  library root.** Investigated and resolved as a non-issue. The
+  directories existed only as local workspace artifacts on some
+  developers' checkouts (likely from a prior `mkdir` that was never
+  committed) — git never tracked them, and fresh clones don't have
+  them at all. Removed locally; no commit needed beyond this note for
+  the historical record. The authoritative E2E suite remains
+  `examples/nestjs-app/test/e2e/`.
+
 ## [0.5.2-alpha] - 2026-05-12
 
 ### Changed
