@@ -22,7 +22,16 @@ import { resolveJwtSecret } from './tokens.js';
     JwtModule.registerAsync({
       useFactory: () => ({
         secret: resolveJwtSecret(),
-        signOptions: { expiresIn: '15m' },
+        // Both sign and verify pin the algorithm explicitly. The
+        // verify-side `algorithms` allow-list is the structural
+        // defense against the `alg: "none"` and HS/RS confusion
+        // attacks: a token whose header advertises any algorithm
+        // outside this list is rejected before the secret is even
+        // consulted, regardless of jsonwebtoken's evolving
+        // defaults. See test/e2e/auth.e2e.test.ts § "adversarial
+        // scenarios" for the failing-attack assertions.
+        signOptions: { expiresIn: '15m', algorithm: 'HS256' },
+        verifyOptions: { algorithms: ['HS256'] },
       }),
     }),
   ],

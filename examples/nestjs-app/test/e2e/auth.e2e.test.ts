@@ -141,39 +141,110 @@ describe('JWT auth — happy path + missing-header rejection', () => {
   // -------------------------------------------------------------------
   // Theme 7 PR E — adversarial JWT scenarios.
   //
-  // The four placeholders below name the failure modes PR E will fill
-  // in. They run zero assertions today (the block is skipped) but the
-  // structure mirrors the rejection-paths block above so the future
-  // PR has a clear shape to follow. Each scenario has a one-line
-  // description of the expected status + reason; the PR's job is to
-  // turn each `it.skip` into a real assertion.
+  // Each test takes a known-attack shape and asserts the guard rejects
+  // it with 401. Together they pin the four properties a JWT-based
+  // auth layer cannot afford to get wrong:
+  //
+  //   - The signature actually protects the payload (tampered-payload
+  //     attack).
+  //   - The signing key is checked, not just decoded (tampered-
+  //     signature attack).
+  //   - Token freshness is enforced (expired-token attack).
+  //   - The algorithm allow-list is enforced (alg-confusion / alg:none
+  //     attack).
+  //
+  // All four are routine "things to test" in any production JWT setup
+  // — codifying them here so a future refactor of `JwtAuthGuard` or
+  // `auth.module.ts`'s `JwtModule.registerAsync` config can't
+  // silently regress any of them.
   // -------------------------------------------------------------------
-  describe.skip('Theme 7 PR E — adversarial scenarios (TODO)', () => {
-    it.skip('tampered payload (mutate sub after sign) → 401', () => {
-      // Sign a token, base64-decode the payload, change `sub`, re-
-      // base64-encode, reassemble. The signature now fails to verify
-      // because it was computed over the original payload.
-      // Expected: `JwtService.verifyAsync` throws → guard 401.
+  describe('Theme 7 PR E — adversarial scenarios', () => {
+    /**
+     * Build a fresh base64url-encoded JWT segment from any object.
+     * `Buffer.toString('base64url')` already omits padding per the
+     * JWS spec, so no manual `/=$/g`-stripping is needed.
+     */
+    const b64url = (value: object): string =>
+      Buffer.from(JSON.stringify(value)).toString('base64url');
+
+    it('tampered payload (mutate `sub` after signing) → 401', async () => {
+      // Sign a valid token, decode the payload, mutate `sub`, re-
+      // encode the payload, reassemble with the ORIGINAL signature.
+      // The signature was computed over the original payload; the
+      // verifier recomputes the HMAC over the new payload and the
+      // mismatch trips the check.
+      const validToken = signTokenFor(USER_ISO_ADMIN_ACME, TENANT_ACME);
+      const [header, payload, signature] = validToken.split('.');
+      if (!header || !payload || !signature) throw new Error('unexpected token shape');
+
+      const decoded = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8')) as {
+        sub: string;
+        tenantId: string;
+        exp?: number;
+        iat?: number;
+      };
+      decoded.sub = 'cccccccc-cccc-cccc-cccc-cccccccc9999'; // an arbitrary forged id
+      const tamperedPayload = b64url(decoded);
+      const tamperedToken = `${header}.${tamperedPayload}.${signature}`;
+
+      const res = await request(app.getHttpServer())
+        .get('/merchants')
+        .set('Authorization', `Bearer ${tamperedToken}`);
+      expect(res.status).toBe(401);
     });
 
-    it.skip('tampered signature (swap signing key) → 401', () => {
-      // Sign the token with a DIFFERENT secret (e.g., 'evil-secret')
-      // and send it. The guard's `verifyAsync` rejects it.
-      // Use the `secret` option of `signTokenFor` to mint:
-      //   signTokenFor(USER_PAT, TENANT_ACME, { secret: 'evil-secret' })
-      void signTokenFor; // keep import used while the test is skipped
+    it('tampered signature (signed with a different secret) → 401', async () => {
+      // Mint a token using a DIFFERENT signing key. Header and payload
+      // shape are valid (algorithm, exp, etc.) — only the signature
+      // doesn't verify under the guard's configured secret.
+      const evilToken = signTokenFor(USER_ISO_ADMIN_ACME, TENANT_ACME, {
+        secret: 'evil-secret-not-the-real-one',
+      });
+
+      const res = await request(app.getHttpServer())
+        .get('/merchants')
+        .set('Authorization', `Bearer ${evilToken}`);
+      expect(res.status).toBe(401);
     });
 
-    it.skip('expired token → 401', () => {
-      // Mint a token with negative `expiresIn`:
-      //   signTokenFor(USER_PAT, TENANT_ACME, { expiresIn: '-1s' })
-      // The guard's `verifyAsync` should reject it as expired.
+    it('expired token (negative `expiresIn`) → 401', async () => {
+      // jsonwebtoken's `verify` rejects tokens whose `exp` is in the
+      // past. The `-1s` lifetime mints a token that's already expired
+      // by the time the request arrives — no real-time wait needed.
+      const expiredToken = signTokenFor(USER_ISO_ADMIN_ACME, TENANT_ACME, {
+        expiresIn: '-1s',
+      });
+
+      const res = await request(app.getHttpServer())
+        .get('/merchants')
+        .set('Authorization', `Bearer ${expiredToken}`);
+      expect(res.status).toBe(401);
     });
 
-    it.skip('algorithm-confusion attack (alg: "none") → 401', () => {
-      // Manually construct a JWT with header `{ "alg": "none" }`
-      // and an empty signature segment. `verifyAsync` rejects
-      // because the configured algorithm is HS256.
+    it('algorithm-confusion attack (alg: "none") → 401', async () => {
+      // Manually build a token whose header advertises `alg: "none"`
+      // and whose signature segment is empty. The classic 2015-era
+      // JWT vulnerability was that some verifiers accepted this when
+      // no explicit `algorithms` allow-list was configured — they'd
+      // see `alg: none` and skip signature verification entirely.
+      //
+      // `auth.module.ts` configures `verifyOptions: { algorithms:
+      // ['HS256'] }` on the JwtModule, so any token whose header
+      // declares an algorithm outside the allow-list is rejected
+      // before the (empty) signature is even consulted.
+      const header = b64url({ alg: 'none', typ: 'JWT' });
+      const payload = b64url({
+        sub: USER_ISO_ADMIN_ACME,
+        tenantId: TENANT_ACME,
+        iat: Math.floor(Date.now() / 1000),
+        exp: Math.floor(Date.now() / 1000) + 60,
+      });
+      const noneToken = `${header}.${payload}.`; // intentionally empty signature
+
+      const res = await request(app.getHttpServer())
+        .get('/merchants')
+        .set('Authorization', `Bearer ${noneToken}`);
+      expect(res.status).toBe(401);
     });
   });
 });
